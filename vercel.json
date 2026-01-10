@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "regions": ["iad1"],
+  "env": {
+    "AZURE_REALTIME_SESSIONS_URL": "@azure_realtime_sessions_url",
+    "AZURE_REALTIME_WEBRTC_URL": "@azure_realtime_webrtc_url",
+    "AZURE_REALTIME_API_KEY": "@azure_realtime_api_key"
+  }
+}

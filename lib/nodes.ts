@@ -1,0 +1,944 @@
+// ============================================
+// PathRAG Diagnostic Nodes
+// TP-Link Router Diagnostic Path (Primary)
+// ============================================
+
+import { DiagnosticNode, DiagnosticPhase } from './types';
+
+export const DIAGNOSTIC_NODES: DiagnosticNode[] = [
+  // ========================================
+  // PHASE 0 - Entry & Context Setup
+  // ========================================
+  {
+    node_id: 'entry_start',
+    phase: DiagnosticPhase.ENTRY,
+    input_type: 'confirmation',
+    question: 'Ready to begin router diagnosis?',
+    voice_instruction: "Hello! I'm Akili, your internet support assistant. I'll guide you step-by-step to identify and fix your connection issue. I'll ask you to observe lights on your router and describe what you see. Are you ready to begin?",
+    allowed_assets: ['intro_diagram'],
+    expected_answers: {
+      'yes': 'entry_router_identify',
+      'ready': 'entry_router_identify',
+      'no': 'entry_postpone',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      user_uncertain: true,
+    },
+  },
+  {
+    node_id: 'entry_router_identify',
+    phase: DiagnosticPhase.ENTRY,
+    input_type: 'user_observation',
+    question: 'What brand is your router?',
+    voice_instruction: "Let's identify your router. Can you see a brand name on the front or top of your router? It might say TP-Link, NETGEAR, D-Link, ASUS, or another brand. What do you see?",
+    allowed_assets: ['router_brands_guide'],
+    expected_answers: {
+      'tplink': 'physical_power_led',
+      'tp-link': 'physical_power_led',
+      'netgear': 'physical_power_led',
+      'dlink': 'physical_power_led',
+      'd-link': 'physical_power_led',
+      'asus': 'physical_power_led',
+      'other': 'physical_power_led',
+      'generic': 'physical_power_led',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      user_uncertain: true,
+    },
+  },
+  {
+    node_id: 'entry_postpone',
+    phase: DiagnosticPhase.ENTRY,
+    input_type: 'confirmation',
+    question: 'Would you like to continue later?',
+    voice_instruction: "No problem! When you're ready, just say 'start diagnosis' and we can begin. Is there anything else I can help clarify before we end?",
+    allowed_assets: [],
+    expected_answers: {
+      'yes': 'session_end',
+      'no': 'entry_start',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+
+  // ========================================
+  // PHASE 1 - Physical Layer Verification
+  // ========================================
+  {
+    node_id: 'physical_power_led',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_observation',
+    question: 'What color is the power LED?',
+    voice_instruction: "Let's check the power light on your router. Look for a light labeled 'Power' - it's usually on the left side. What color is it? Is it green, orange, blinking, or off?",
+    allowed_assets: ['led_power_guide', 'tplink_led_diagram'],
+    expected_answers: {
+      'green': 'physical_internet_led',
+      'solid green': 'physical_internet_led',
+      'orange': 'physical_power_issue',
+      'amber': 'physical_power_issue',
+      'blinking': 'physical_power_booting',
+      'off': 'physical_power_off',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      user_uncertain: true,
+      screen_mismatch: true,
+      max_retries: 3,
+    },
+  },
+  {
+    node_id: 'physical_power_off',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_action',
+    question: 'Is the router plugged in?',
+    voice_instruction: "The power light is off. Let's check the basics. First, confirm the power cable is firmly plugged into the back of the router. Then check that the other end is plugged into a working power outlet. Once you've checked both connections, tell me - is everything plugged in?",
+    allowed_assets: ['power_cable_guide'],
+    expected_answers: {
+      'yes': 'physical_power_led_recheck',
+      'plugged in': 'physical_power_led_recheck',
+      'no': 'physical_power_reconnect',
+    },
+    actions_allowed: ['RESEAT_CABLE'],
+    escalation_conditions: {
+      user_uncertain: true,
+      retry_exceeded: true,
+      max_retries: 2,
+    },
+  },
+  {
+    node_id: 'physical_power_reconnect',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_action',
+    question: 'Please plug in the power cable',
+    voice_instruction: "Please plug the power cable into the router and into a working outlet. Let me know when it's plugged in and any lights come on.",
+    allowed_assets: ['power_cable_guide'],
+    expected_answers: {
+      'done': 'physical_power_led_recheck',
+      'plugged in': 'physical_power_led_recheck',
+      'yes': 'physical_power_led_recheck',
+    },
+    actions_allowed: ['RESEAT_CABLE'],
+    escalation_conditions: {
+      user_uncertain: true,
+      max_retries: 2,
+    },
+  },
+  {
+    node_id: 'physical_power_led_recheck',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_observation',
+    question: 'What color is the power LED now?',
+    voice_instruction: "Now look at the power light again. What color is it showing now - green, orange, blinking, or still off?",
+    allowed_assets: ['led_power_guide'],
+    expected_answers: {
+      'green': 'physical_internet_led',
+      'solid green': 'physical_internet_led',
+      'orange': 'physical_power_issue',
+      'blinking': 'physical_power_booting',
+      'off': 'escalation_hardware',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      max_retries: 2,
+    },
+  },
+  {
+    node_id: 'physical_power_issue',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_action',
+    question: 'Router may have hardware issue',
+    voice_instruction: "An orange power light usually indicates a hardware problem or the router is in recovery mode. Let's try a power cycle. Unplug the power cable, wait 10 seconds, then plug it back in. Tell me when you've done that.",
+    allowed_assets: ['power_cycle_guide'],
+    expected_answers: {
+      'done': 'physical_power_led_recheck',
+      'yes': 'physical_power_led_recheck',
+    },
+    actions_allowed: ['POWER_CYCLE'],
+    escalation_conditions: {
+      retry_exceeded: true,
+      max_retries: 2,
+    },
+  },
+  {
+    node_id: 'physical_power_booting',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_observation',
+    question: 'Router is booting, please wait',
+    voice_instruction: "The router is starting up - that's normal for a blinking light. Let's wait about 60 seconds for it to fully boot. Watch the power light and tell me when it becomes steady green.",
+    allowed_assets: ['led_power_guide'],
+    expected_answers: {
+      'green': 'physical_internet_led',
+      'solid green': 'physical_internet_led',
+      'still blinking': 'physical_power_issue',
+      'orange': 'physical_power_issue',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      max_retries: 3,
+    },
+  },
+  {
+    node_id: 'physical_internet_led',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_observation',
+    question: 'What color is the Internet/WAN LED?',
+    voice_instruction: "Now look for the light labeled 'Internet' or 'WAN' - it's usually in the middle of the row of lights. What color is it? Green, orange, red, blinking, or off?",
+    allowed_assets: ['led_internet_guide', 'tplink_led_diagram'],
+    expected_answers: {
+      'green': 'local_network_check',
+      'solid green': 'local_network_check',
+      'orange': 'physical_wan_cable_check',
+      'red': 'physical_wan_cable_check',
+      'blinking': 'physical_wan_connecting',
+      'off': 'physical_wan_cable_check',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      user_uncertain: true,
+      max_retries: 3,
+    },
+  },
+  {
+    node_id: 'physical_wan_cable_check',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_action',
+    question: 'Check WAN cable connection',
+    voice_instruction: "The internet light suggests a connection problem. Look at the back of your router for a port labeled 'WAN' or 'Internet' - it's usually a different color, often blue or yellow. Check if there's a cable plugged in there. Is a cable connected to that port?",
+    allowed_assets: ['wan_port_guide', 'cable_check_diagram'],
+    expected_answers: {
+      'yes': 'physical_wan_reseat',
+      'connected': 'physical_wan_reseat',
+      'no': 'physical_wan_connect',
+    },
+    actions_allowed: ['RESEAT_CABLE'],
+    escalation_conditions: {
+      user_uncertain: true,
+    },
+  },
+  {
+    node_id: 'physical_wan_connect',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_action',
+    question: 'Connect the WAN cable',
+    voice_instruction: "You'll need to connect the cable from your modem or ONT box to the WAN port on your router. The cable should click in securely. Let me know when it's connected.",
+    allowed_assets: ['wan_port_guide', 'ont_connection_diagram'],
+    expected_answers: {
+      'done': 'physical_internet_led_recheck',
+      'connected': 'physical_internet_led_recheck',
+      'yes': 'physical_internet_led_recheck',
+    },
+    actions_allowed: ['RESEAT_CABLE'],
+    escalation_conditions: {
+      user_uncertain: true,
+    },
+  },
+  {
+    node_id: 'physical_wan_reseat',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_action',
+    question: 'Reseat the WAN cable',
+    voice_instruction: "Let's reseat that cable. Unplug the cable from the WAN port, wait 5 seconds, then firmly plug it back in until you hear a click. Also check the other end where it connects to your modem. Tell me when done.",
+    allowed_assets: ['cable_reseat_guide'],
+    expected_answers: {
+      'done': 'physical_internet_led_recheck',
+      'yes': 'physical_internet_led_recheck',
+    },
+    actions_allowed: ['RESEAT_CABLE'],
+    escalation_conditions: {
+      max_retries: 2,
+    },
+  },
+  {
+    node_id: 'physical_wan_connecting',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_observation',
+    question: 'WAN is attempting to connect',
+    voice_instruction: "A blinking internet light means the router is trying to establish a connection. Let's wait 30 seconds. Watch the light - does it become solid green, or does it stay blinking or go orange?",
+    allowed_assets: ['led_internet_guide'],
+    expected_answers: {
+      'green': 'local_network_check',
+      'solid green': 'local_network_check',
+      'still blinking': 'physical_wan_cable_check',
+      'orange': 'physical_wan_cable_check',
+      'red': 'physical_wan_cable_check',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      max_retries: 3,
+    },
+  },
+  {
+    node_id: 'physical_internet_led_recheck',
+    phase: DiagnosticPhase.PHYSICAL_LAYER,
+    input_type: 'user_observation',
+    question: 'What color is the Internet LED now?',
+    voice_instruction: "Look at the Internet light again. What color is it showing now?",
+    allowed_assets: ['led_internet_guide'],
+    expected_answers: {
+      'green': 'local_network_check',
+      'solid green': 'local_network_check',
+      'orange': 'wan_status_check',
+      'red': 'wan_status_check',
+      'blinking': 'physical_wan_connecting',
+      'off': 'escalation_wan_issue',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      max_retries: 2,
+    },
+  },
+
+  // ========================================
+  // PHASE 2 - Local Network Sanity Check
+  // ========================================
+  {
+    node_id: 'local_network_check',
+    phase: DiagnosticPhase.LOCAL_NETWORK,
+    input_type: 'user_observation',
+    question: 'How are you connected to the router?',
+    voice_instruction: "The router looks healthy. Now let's check your device's connection. Are you connected to the router via WiFi or with an ethernet cable plugged directly in?",
+    allowed_assets: ['connection_types_guide'],
+    expected_answers: {
+      'wifi': 'local_wifi_connected',
+      'wireless': 'local_wifi_connected',
+      'ethernet': 'local_ethernet_check',
+      'cable': 'local_ethernet_check',
+      'wired': 'local_ethernet_check',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      user_uncertain: true,
+    },
+  },
+  {
+    node_id: 'local_wifi_connected',
+    phase: DiagnosticPhase.LOCAL_NETWORK,
+    input_type: 'user_observation',
+    question: 'Is WiFi showing connected?',
+    voice_instruction: "On your phone or computer, look at the WiFi icon in the corner of your screen. Does it show you're connected to your WiFi network? You should see the network name.",
+    allowed_assets: ['wifi_icon_guide'],
+    expected_answers: {
+      'yes': 'local_browser_test',
+      'connected': 'local_browser_test',
+      'no': 'local_wifi_reconnect',
+      'disconnected': 'local_wifi_reconnect',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      user_uncertain: true,
+    },
+  },
+  {
+    node_id: 'local_wifi_reconnect',
+    phase: DiagnosticPhase.LOCAL_NETWORK,
+    input_type: 'user_action',
+    question: 'Connect to WiFi network',
+    voice_instruction: "Let's connect to your WiFi. Go to your WiFi settings, find your network name, and connect. You'll need your WiFi password. Let me know when you're connected.",
+    allowed_assets: ['wifi_connect_guide'],
+    expected_answers: {
+      'connected': 'local_browser_test',
+      'done': 'local_browser_test',
+      'yes': 'local_browser_test',
+      'failed': 'escalation_wifi_issue',
+      "can't connect": 'escalation_wifi_issue',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      user_uncertain: true,
+      max_retries: 3,
+    },
+  },
+  {
+    node_id: 'local_ethernet_check',
+    phase: DiagnosticPhase.LOCAL_NETWORK,
+    input_type: 'user_observation',
+    question: 'Is ethernet cable securely connected?',
+    voice_instruction: "Check the ethernet cable is firmly connected at both ends - one end in your computer, the other in one of the numbered LAN ports on the router (not the WAN port). Are both ends secure?",
+    allowed_assets: ['ethernet_connection_guide'],
+    expected_answers: {
+      'yes': 'local_browser_test',
+      'secure': 'local_browser_test',
+      'no': 'local_ethernet_reseat',
+    },
+    actions_allowed: ['RESEAT_CABLE'],
+    escalation_conditions: {
+      user_uncertain: true,
+    },
+  },
+  {
+    node_id: 'local_ethernet_reseat',
+    phase: DiagnosticPhase.LOCAL_NETWORK,
+    input_type: 'user_action',
+    question: 'Reseat ethernet cable',
+    voice_instruction: "Please firmly connect the ethernet cable at both ends. You should hear a click when it's properly seated. Let me know when done.",
+    allowed_assets: ['ethernet_connection_guide'],
+    expected_answers: {
+      'done': 'local_browser_test',
+      'yes': 'local_browser_test',
+    },
+    actions_allowed: ['RESEAT_CABLE'],
+    escalation_conditions: {
+      max_retries: 2,
+    },
+  },
+  {
+    node_id: 'local_browser_test',
+    phase: DiagnosticPhase.LOCAL_NETWORK,
+    input_type: 'user_action',
+    question: 'Can you access the router admin page?',
+    voice_instruction: "Now let's access your router's settings page. Open a web browser and type 192.168.0.1 in the address bar, then press Enter. Do you see a login page or the router interface?",
+    allowed_assets: ['router_login_tplink', 'browser_address_guide'],
+    expected_answers: {
+      'yes': 'router_login_prompt',
+      'see it': 'router_login_prompt',
+      'login page': 'router_login_prompt',
+      'no': 'local_gateway_alt',
+      "can't access": 'local_gateway_alt',
+      'error': 'local_gateway_alt',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      user_uncertain: true,
+      screen_mismatch: true,
+    },
+  },
+  {
+    node_id: 'local_gateway_alt',
+    phase: DiagnosticPhase.LOCAL_NETWORK,
+    input_type: 'user_action',
+    question: 'Try alternate gateway address',
+    voice_instruction: "Let's try a different address. Type 192.168.1.1 in the address bar instead. Some routers use this address. Do you see the router page now?",
+    allowed_assets: ['browser_address_guide'],
+    expected_answers: {
+      'yes': 'router_login_prompt',
+      'see it': 'router_login_prompt',
+      'no': 'escalation_access_issue',
+      "can't access": 'escalation_access_issue',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      screen_mismatch: true,
+      max_retries: 2,
+    },
+  },
+
+  // ========================================
+  // PHASE 3 - Router Login & Navigation
+  // ========================================
+  {
+    node_id: 'router_login_prompt',
+    phase: DiagnosticPhase.ROUTER_LOGIN,
+    input_type: 'user_action',
+    question: 'Login to the router',
+    voice_instruction: "You should see a login page. The default username is usually 'admin' and the password is either 'admin' or 'password'. Some routers have the password printed on a sticker on the bottom. Can you log in?",
+    allowed_assets: ['router_login_tplink', 'default_credentials_guide'],
+    expected_answers: {
+      'yes': 'router_dashboard_confirm',
+      'logged in': 'router_dashboard_confirm',
+      "in": 'router_dashboard_confirm',
+      'no': 'router_login_failed',
+      "can't login": 'router_login_failed',
+      'wrong password': 'router_login_failed',
+    },
+    actions_allowed: ['RESET_CREDENTIALS'],
+    escalation_conditions: {
+      user_uncertain: true,
+      max_retries: 3,
+    },
+  },
+  {
+    node_id: 'router_login_failed',
+    phase: DiagnosticPhase.ROUTER_LOGIN,
+    input_type: 'user_observation',
+    question: 'Check for password on router',
+    voice_instruction: "The default password may have been changed. Look at the bottom or back of your router for a sticker with login details. Do you see any credentials printed there?",
+    allowed_assets: ['router_sticker_guide'],
+    expected_answers: {
+      'yes': 'router_login_retry',
+      'found it': 'router_login_retry',
+      'no': 'escalation_login_issue',
+      'nothing': 'escalation_login_issue',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      max_retries: 2,
+    },
+  },
+  {
+    node_id: 'router_login_retry',
+    phase: DiagnosticPhase.ROUTER_LOGIN,
+    input_type: 'user_action',
+    question: 'Try credentials from sticker',
+    voice_instruction: "Try logging in with the username and password from the sticker. Let me know if you get in.",
+    allowed_assets: ['router_login_tplink'],
+    expected_answers: {
+      'yes': 'router_dashboard_confirm',
+      'logged in': 'router_dashboard_confirm',
+      'in': 'router_dashboard_confirm',
+      'no': 'escalation_login_issue',
+      'failed': 'escalation_login_issue',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      max_retries: 2,
+    },
+  },
+  {
+    node_id: 'router_dashboard_confirm',
+    phase: DiagnosticPhase.ROUTER_LOGIN,
+    input_type: 'user_observation',
+    question: 'Can you see the router dashboard?',
+    voice_instruction: "You should now see the router's main dashboard or status page. It usually shows network status, connected devices, and various menu options. Can you see this kind of overview page?",
+    allowed_assets: ['tplink_dashboard', 'dashboard_overview_guide'],
+    expected_answers: {
+      'yes': 'wan_status_check',
+      'see it': 'wan_status_check',
+      'no': 'router_navigate_status',
+      'different': 'router_navigate_status',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      screen_mismatch: true,
+    },
+  },
+  {
+    node_id: 'router_navigate_status',
+    phase: DiagnosticPhase.ROUTER_LOGIN,
+    input_type: 'user_action',
+    question: 'Navigate to status page',
+    voice_instruction: "Look for a menu item called 'Status', 'Network Status', or 'Internet' in the navigation. It might be in a sidebar on the left or tabs at the top. Click on it to see your connection status.",
+    allowed_assets: ['tplink_navigation_guide'],
+    expected_answers: {
+      'found it': 'wan_status_check',
+      'yes': 'wan_status_check',
+      'done': 'wan_status_check',
+      "can't find": 'escalation_ui_mismatch',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      screen_mismatch: true,
+      user_uncertain: true,
+    },
+  },
+
+  // ========================================
+  // PHASE 4 - WAN / Internet Status Inspection
+  // ========================================
+  {
+    node_id: 'wan_status_check',
+    phase: DiagnosticPhase.WAN_INSPECTION,
+    input_type: 'user_observation',
+    question: 'What is the WAN/Internet connection status?',
+    voice_instruction: "On the status page, look for 'WAN' or 'Internet' connection status. It should show if you're connected or disconnected, and might display an IP address. What does it say - Connected, Disconnected, or something else?",
+    allowed_assets: ['wan_status_connected', 'wan_status_disconnected'],
+    expected_answers: {
+      'connected': 'wan_ip_check',
+      'online': 'wan_ip_check',
+      'disconnected': 'action_reconnect_wan',
+      'offline': 'action_reconnect_wan',
+      'connecting': 'wan_status_wait',
+      'no ip': 'action_reconnect_wan',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      user_uncertain: true,
+      screen_mismatch: true,
+    },
+  },
+  {
+    node_id: 'wan_status_wait',
+    phase: DiagnosticPhase.WAN_INSPECTION,
+    input_type: 'user_observation',
+    question: 'Wait for connection to establish',
+    voice_instruction: "The router is trying to connect. Let's wait 30 seconds. Watch the status - does it change to Connected, or does it show an error?",
+    allowed_assets: ['wan_status_connecting'],
+    expected_answers: {
+      'connected': 'wan_ip_check',
+      'disconnected': 'action_reconnect_wan',
+      'error': 'action_reconnect_wan',
+      'still connecting': 'action_reconnect_wan',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      max_retries: 3,
+    },
+  },
+  {
+    node_id: 'wan_ip_check',
+    phase: DiagnosticPhase.WAN_INSPECTION,
+    input_type: 'user_observation',
+    question: 'Do you see a WAN IP address?',
+    voice_instruction: "Look for 'IP Address' or 'WAN IP' on this page. It should show numbers like 123.45.67.89. Do you see an IP address, or does it show 0.0.0.0 or blank?",
+    allowed_assets: ['wan_ip_guide'],
+    expected_answers: {
+      'yes': 'verification_internet_test',
+      'see ip': 'verification_internet_test',
+      'has ip': 'verification_internet_test',
+      'no': 'action_reconnect_wan',
+      '0.0.0.0': 'action_reconnect_wan',
+      'blank': 'action_reconnect_wan',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      user_uncertain: true,
+    },
+  },
+
+  // ========================================
+  // PHASE 5 - Guided Corrective Actions
+  // ========================================
+  {
+    node_id: 'action_reconnect_wan',
+    phase: DiagnosticPhase.CORRECTIVE_ACTIONS,
+    input_type: 'user_action',
+    question: 'Reconnect WAN connection',
+    voice_instruction: "Let's try reconnecting. Look for a 'Connect' or 'Reconnect' button near the WAN status. If you see one, click it. Otherwise, look for 'Save' or 'Apply' button. Let me know when you've clicked it.",
+    allowed_assets: ['wan_reconnect_guide'],
+    expected_answers: {
+      'done': 'action_wait_reconnect',
+      'clicked': 'action_wait_reconnect',
+      'yes': 'action_wait_reconnect',
+      "can't find": 'action_reboot_router',
+    },
+    actions_allowed: ['RECONNECT_SESSION', 'SAVE_APPLY'],
+    escalation_conditions: {
+      user_uncertain: true,
+    },
+  },
+  {
+    node_id: 'action_wait_reconnect',
+    phase: DiagnosticPhase.CORRECTIVE_ACTIONS,
+    input_type: 'user_observation',
+    question: 'Wait for reconnection',
+    voice_instruction: "Wait about 30 seconds for the router to reconnect. Watch the WAN status - does it change to Connected with an IP address?",
+    allowed_assets: ['wan_status_connected'],
+    expected_answers: {
+      'connected': 'verification_internet_test',
+      'yes': 'verification_internet_test',
+      'has ip': 'verification_internet_test',
+      'still disconnected': 'action_reboot_router',
+      'no': 'action_reboot_router',
+      'failed': 'action_reboot_router',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      max_retries: 2,
+    },
+  },
+  {
+    node_id: 'action_reboot_router',
+    phase: DiagnosticPhase.CORRECTIVE_ACTIONS,
+    input_type: 'user_action',
+    question: 'Reboot the router',
+    voice_instruction: "Let's try a soft reboot. In the router interface, look for 'System Tools', 'Administration', or 'Management' in the menu. Then find 'Reboot' or 'Restart'. Click it and confirm. The router will restart - this takes about 2 minutes.",
+    allowed_assets: ['reboot_guide', 'tplink_system_tools'],
+    expected_answers: {
+      'done': 'action_reboot_wait',
+      'rebooting': 'action_reboot_wait',
+      'yes': 'action_reboot_wait',
+      "can't find": 'action_power_cycle',
+    },
+    actions_allowed: ['SOFT_REBOOT'],
+    escalation_conditions: {
+      user_uncertain: true,
+    },
+  },
+  {
+    node_id: 'action_power_cycle',
+    phase: DiagnosticPhase.CORRECTIVE_ACTIONS,
+    input_type: 'user_action',
+    question: 'Power cycle the router',
+    voice_instruction: "Let's do a manual power cycle. Unplug the router's power cable, wait 30 seconds, then plug it back in. Wait for all the lights to come back on. Let me know when the router is fully restarted.",
+    allowed_assets: ['power_cycle_guide'],
+    expected_answers: {
+      'done': 'action_reboot_wait',
+      'yes': 'action_reboot_wait',
+      'back on': 'action_reboot_wait',
+    },
+    actions_allowed: ['POWER_CYCLE'],
+    escalation_conditions: {
+      max_retries: 2,
+    },
+  },
+  {
+    node_id: 'action_reboot_wait',
+    phase: DiagnosticPhase.CORRECTIVE_ACTIONS,
+    input_type: 'user_observation',
+    question: 'Wait for router to restart',
+    voice_instruction: "The router is restarting. Wait until you see all lights steady, then try accessing the router page again at 192.168.0.1. Let me know when you can access it.",
+    allowed_assets: ['router_login_tplink'],
+    expected_answers: {
+      'yes': 'verification_wan_recheck',
+      'done': 'verification_wan_recheck',
+      'can access': 'verification_wan_recheck',
+      'no': 'escalation_reboot_failed',
+      "can't access": 'escalation_reboot_failed',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      max_retries: 3,
+    },
+  },
+
+  // ========================================
+  // PHASE 6 - Verification
+  // ========================================
+  {
+    node_id: 'verification_wan_recheck',
+    phase: DiagnosticPhase.VERIFICATION,
+    input_type: 'user_observation',
+    question: 'Check WAN status after reboot',
+    voice_instruction: "After logging back in, check the WAN status again. Is it showing Connected with an IP address?",
+    allowed_assets: ['wan_status_connected'],
+    expected_answers: {
+      'connected': 'verification_internet_test',
+      'yes': 'verification_internet_test',
+      'has ip': 'verification_internet_test',
+      'disconnected': 'escalation_persistent_issue',
+      'no': 'escalation_persistent_issue',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      max_retries: 2,
+    },
+  },
+  {
+    node_id: 'verification_internet_test',
+    phase: DiagnosticPhase.VERIFICATION,
+    input_type: 'user_action',
+    question: 'Test internet connection',
+    voice_instruction: "Let's test if the internet is actually working. Open a new browser tab and try going to google.com. Does the Google page load?",
+    allowed_assets: ['internet_test_guide'],
+    expected_answers: {
+      'yes': 'verification_complete',
+      'works': 'verification_complete',
+      'loaded': 'verification_complete',
+      'no': 'verification_dns_test',
+      "doesn't work": 'verification_dns_test',
+      'error': 'verification_dns_test',
+    },
+    actions_allowed: [],
+    escalation_conditions: {
+      user_uncertain: true,
+    },
+  },
+  {
+    node_id: 'verification_dns_test',
+    phase: DiagnosticPhase.VERIFICATION,
+    input_type: 'user_action',
+    question: 'Test with IP address',
+    voice_instruction: "Let's try accessing a site directly by IP. Try going to 8.8.8.8 in your browser. This tests if the connection works without DNS. Does anything load?",
+    allowed_assets: [],
+    expected_answers: {
+      'yes': 'escalation_dns_issue',
+      'works': 'escalation_dns_issue',
+      'no': 'escalation_connectivity_issue',
+      "doesn't work": 'escalation_connectivity_issue',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'verification_complete',
+    phase: DiagnosticPhase.VERIFICATION,
+    input_type: 'confirmation',
+    question: 'Issue resolved!',
+    voice_instruction: "Excellent! Your internet connection is working now. The issue has been resolved. Is there anything else you'd like help with?",
+    allowed_assets: ['success_diagram'],
+    expected_answers: {
+      'no': 'session_end',
+      'done': 'session_end',
+      'thank you': 'session_end',
+      'yes': 'entry_start',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'session_end',
+    phase: DiagnosticPhase.POST_SESSION,
+    input_type: 'confirmation',
+    question: 'Session complete',
+    voice_instruction: "Thank you for contacting support. Your session is now complete. Have a great day!",
+    allowed_assets: [],
+    expected_answers: {},
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+
+  // ========================================
+  // PHASE 7 - Escalation Nodes
+  // ========================================
+  {
+    node_id: 'escalation_hardware',
+    phase: DiagnosticPhase.ESCALATION,
+    input_type: 'confirmation',
+    question: 'Hardware issue detected',
+    voice_instruction: "It appears there may be a hardware issue with your router. The power light not coming on after checking connections suggests the router may need replacement. I recommend contacting your internet service provider or the router manufacturer for a hardware check.",
+    allowed_assets: ['escalation_hardware_guide'],
+    expected_answers: {
+      'ok': 'session_end',
+      'understood': 'session_end',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'escalation_wan_issue',
+    phase: DiagnosticPhase.ESCALATION,
+    input_type: 'confirmation',
+    question: 'WAN connection issue',
+    voice_instruction: "We've tried the main troubleshooting steps but the WAN connection isn't establishing. This could indicate an issue with your modem, the line from your ISP, or your ISP's network. I recommend contacting your internet service provider to check for outages or line issues.",
+    allowed_assets: ['escalation_isp_guide'],
+    expected_answers: {
+      'ok': 'session_end',
+      'understood': 'session_end',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'escalation_wifi_issue',
+    phase: DiagnosticPhase.ESCALATION,
+    input_type: 'confirmation',
+    question: 'WiFi connection issue',
+    voice_instruction: "There seems to be an issue connecting to the WiFi network. This might be a password problem or interference issue. Try connecting from a different device, or use an ethernet cable temporarily. If the problem persists, you may need to reset the WiFi settings on the router.",
+    allowed_assets: ['escalation_wifi_guide'],
+    expected_answers: {
+      'ok': 'session_end',
+      'understood': 'session_end',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'escalation_access_issue',
+    phase: DiagnosticPhase.ESCALATION,
+    input_type: 'confirmation',
+    question: 'Cannot access router',
+    voice_instruction: "We're unable to access the router's admin page. This could mean the device isn't properly connected, or the router might need a factory reset. Alternatively, your device might have a different gateway address. I recommend checking your device's network settings or contacting support.",
+    allowed_assets: ['escalation_access_guide'],
+    expected_answers: {
+      'ok': 'session_end',
+      'understood': 'session_end',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'escalation_login_issue',
+    phase: DiagnosticPhase.ESCALATION,
+    input_type: 'confirmation',
+    question: 'Cannot login to router',
+    voice_instruction: "We can't log into the router with the available credentials. If the password was changed and forgotten, you may need to factory reset the router using the small reset button on the back. Be aware this will erase all custom settings. Would you like guidance on that, or would you prefer to contact support?",
+    allowed_assets: ['factory_reset_guide'],
+    expected_answers: {
+      'ok': 'session_end',
+      'support': 'session_end',
+      'reset': 'action_factory_reset_info',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'escalation_ui_mismatch',
+    phase: DiagnosticPhase.ESCALATION,
+    input_type: 'confirmation',
+    question: 'Router UI does not match',
+    voice_instruction: "The router interface looks different from what I expected. Your router may have a different firmware version or be a different model. Without being able to match the interface, I cannot guide you safely. I recommend checking your router's documentation or contacting technical support.",
+    allowed_assets: [],
+    expected_answers: {
+      'ok': 'session_end',
+      'understood': 'session_end',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'escalation_reboot_failed',
+    phase: DiagnosticPhase.ESCALATION,
+    input_type: 'confirmation',
+    question: 'Router not responding after reboot',
+    voice_instruction: "The router isn't responding after the restart. Try waiting a few more minutes - sometimes routers take longer to fully boot. If it still doesn't respond, there may be a hardware issue. Contact your ISP or router manufacturer for further assistance.",
+    allowed_assets: [],
+    expected_answers: {
+      'ok': 'session_end',
+      'understood': 'session_end',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'escalation_persistent_issue',
+    phase: DiagnosticPhase.ESCALATION,
+    input_type: 'confirmation',
+    question: 'Issue persists after troubleshooting',
+    voice_instruction: "We've tried the main troubleshooting steps but the connection issue persists. This suggests a problem outside the router - likely with your modem, ISP service, or the line connection. Please contact your internet service provider to report the issue and request a line check.",
+    allowed_assets: ['escalation_isp_guide'],
+    expected_answers: {
+      'ok': 'session_end',
+      'understood': 'session_end',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'escalation_dns_issue',
+    phase: DiagnosticPhase.ESCALATION,
+    input_type: 'confirmation',
+    question: 'DNS resolution issue',
+    voice_instruction: "Your internet connection is working, but there's a DNS problem - the service that translates website names to addresses. Try changing your DNS servers to Google DNS (8.8.8.8) or Cloudflare (1.1.1.1) in your router or device settings. This usually resolves the issue.",
+    allowed_assets: ['dns_settings_guide'],
+    expected_answers: {
+      'ok': 'session_end',
+      'understood': 'session_end',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'escalation_connectivity_issue',
+    phase: DiagnosticPhase.ESCALATION,
+    input_type: 'confirmation',
+    question: 'No internet connectivity',
+    voice_instruction: "Even direct IP access isn't working, which confirms there's no internet connectivity through your router. The issue is likely with your modem, ISP service, or the physical line. Please contact your internet service provider to check for outages or line problems.",
+    allowed_assets: ['escalation_isp_guide'],
+    expected_answers: {
+      'ok': 'session_end',
+      'understood': 'session_end',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+  {
+    node_id: 'action_factory_reset_info',
+    phase: DiagnosticPhase.ESCALATION,
+    input_type: 'confirmation',
+    question: 'Factory reset information',
+    voice_instruction: "To factory reset, find the small reset button on the back of the router - you'll need a paperclip to press it. Hold it for 10-15 seconds until the lights flash. The router will restart with default settings. You'll need to reconfigure your WiFi name and password afterward.",
+    allowed_assets: ['factory_reset_guide'],
+    expected_answers: {
+      'ok': 'session_end',
+      'understood': 'session_end',
+    },
+    actions_allowed: [],
+    escalation_conditions: {},
+  },
+];
+
+// Helper function to get node by ID
+export function getNodeById(nodeId: string): DiagnosticNode | null {
+  return DIAGNOSTIC_NODES.find(n => n.node_id === nodeId) || null;
+}
+
+// Get all nodes for a specific phase
+export function getNodesForPhase(phase: DiagnosticPhase): DiagnosticNode[] {
+  return DIAGNOSTIC_NODES.filter(n => n.phase === phase);
+}
+
+// Get the entry node
+export function getEntryNode(): DiagnosticNode {
+  return DIAGNOSTIC_NODES.find(n => n.node_id === 'entry_start')!;
+}

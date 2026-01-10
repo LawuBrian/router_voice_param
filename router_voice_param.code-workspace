@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../param_demo_backend"
+		},
+		{
+			"path": "../param_demo-frontend"
+		}
+	],
+	"settings": {}
+}

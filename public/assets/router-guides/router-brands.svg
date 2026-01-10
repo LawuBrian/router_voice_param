@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300" fill="none">
+  <!-- Background -->
+  <rect width="500" height="300" fill="#0a0e14"/>
+  <rect x="15" y="15" width="470" height="270" rx="10" fill="#121820" stroke="#2a3544" stroke-width="1"/>
+  
+  <!-- Title -->
+  <text x="250" y="45" font-family="Space Grotesk, system-ui" font-size="16" font-weight="600" fill="#e8ecf1" text-anchor="middle">Common Router Brands</text>
+  
+  <!-- TP-Link -->
+  <g transform="translate(50, 70)">
+    <rect width="100" height="80" rx="8" fill="#1a222d" stroke="#00d4aa" stroke-width="2"/>
+    <text x="50" y="35" font-family="Arial" font-size="14" font-weight="bold" fill="#00a0b0" text-anchor="middle">TP-LINK</text>
+    <text x="50" y="55" font-family="Space Grotesk" font-size="10" fill="#6b7a8f" text-anchor="middle">192.168.0.1</text>
+    <text x="50" y="70" font-family="Space Grotesk" font-size="9" fill="#4b5563" text-anchor="middle">admin/admin</text>
+  </g>
+  
+  <!-- NETGEAR -->
+  <g transform="translate(170, 70)">
+    <rect width="100" height="80" rx="8" fill="#1a222d" stroke="#2a3544"/>
+    <text x="50" y="35" font-family="Arial" font-size="13" font-weight="bold" fill="#8b5cf6" text-anchor="middle">NETGEAR</text>
+    <text x="50" y="55" font-family="Space Grotesk" font-size="10" fill="#6b7a8f" text-anchor="middle">192.168.1.1</text>
+    <text x="50" y="70" font-family="Space Grotesk" font-size="9" fill="#4b5563" text-anchor="middle">admin/password</text>
+  </g>
+  
+  <!-- D-Link -->
+  <g transform="translate(290, 70)">
+    <rect width="100" height="80" rx="8" fill="#1a222d" stroke="#2a3544"/>
+    <text x="50" y="35" font-family="Arial" font-size="14" font-weight="bold" fill="#f97316" text-anchor="middle">D-Link</text>
+    <text x="50" y="55" font-family="Space Grotesk" font-size="10" fill="#6b7a8f" text-anchor="middle">192.168.0.1</text>
+    <text x="50" y="70" font-family="Space Grotesk" font-size="9" fill="#4b5563" text-anchor="middle">admin/(blank)</text>
+  </g>
+  
+  <!-- ASUS -->
+  <g transform="translate(410, 70)">
+    <rect width="70" height="80" rx="8" fill="#1a222d" stroke="#2a3544"/>
+    <text x="35" y="35" font-family="Arial" font-size="14" font-weight="bold" fill="#3b82f6" text-anchor="middle">ASUS</text>
+    <text x="35" y="55" font-family="Space Grotesk" font-size="10" fill="#6b7a8f" text-anchor="middle">192.168.1.1</text>
+    <text x="35" y="70" font-family="Space Grotesk" font-size="9" fill="#4b5563" text-anchor="middle">admin/admin</text>
+  </g>
+  
+  <!-- Second Row -->
+  <g transform="translate(120, 170)">
+    <rect width="100" height="80" rx="8" fill="#1a222d" stroke="#2a3544"/>
+    <text x="50" y="35" font-family="Arial" font-size="12" font-weight="bold" fill="#ec4899" text-anchor="middle">Linksys</text>
+    <text x="50" y="55" font-family="Space Grotesk" font-size="10" fill="#6b7a8f" text-anchor="middle">192.168.1.1</text>
+  </g>
+  
+  <g transform="translate(240, 170)">
+    <rect width="100" height="80" rx="8" fill="#1a222d" stroke="#2a3544"/>
+    <text x="50" y="35" font-family="Arial" font-size="12" font-weight="bold" fill="#14b8a6" text-anchor="middle">Huawei</text>
+    <text x="50" y="55" font-family="Space Grotesk" font-size="10" fill="#6b7a8f" text-anchor="middle">192.168.1.1</text>
+  </g>
+  
+  <!-- Tip -->
+  <text x="250" y="275" font-family="Space Grotesk" font-size="10" fill="#6b7a8f" text-anchor="middle">Look for the brand name on the front or top of your router</text>
+</svg>
