@@ -13,10 +13,7 @@ import {
   getProgressPercentage,
 } from '@/lib/pathrag-engine';
 import { getAssetsForNode } from '@/lib/assets';
-import { DiagnosticSession } from '@/lib/types';
-
-// In-memory session store (in production, use Redis or database)
-const sessionStore = new Map<string, DiagnosticSession>();
+import { saveSession, getSession, isRedisEnabled } from '@/lib/session-store';
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,16 +22,16 @@ export async function POST(request: NextRequest) {
 
     switch (action) {
       case 'create':
-        return handleCreateSession(vendorId);
+        return await handleCreateSession(vendorId);
       
       case 'process':
-        return handleProcessResponse(sessionId, response);
+        return await handleProcessResponse(sessionId, response);
       
       case 'getState':
-        return handleGetState(sessionId);
+        return await handleGetState(sessionId);
       
       case 'getContext':
-        return handleGetContext(sessionId);
+        return await handleGetContext(sessionId);
       
       default:
         return NextResponse.json(
@@ -51,12 +48,16 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function handleCreateSession(vendorId?: string) {
+async function handleCreateSession(vendorId?: string) {
   const session = createSession(vendorId);
-  sessionStore.set(session.session_id, session);
+  
+  // Save to session store (Redis or in-memory)
+  await saveSession(session);
   
   const currentNode = getCurrentNode(session);
   const assets = currentNode ? getAssetsForNode(currentNode.node_id) : [];
+  
+  console.log(`[PathRAG] Session created: ${session.session_id} (Redis: ${isRedisEnabled()})`);
   
   return NextResponse.json({
     session_id: session.session_id,
@@ -68,8 +69,8 @@ function handleCreateSession(vendorId?: string) {
   });
 }
 
-function handleProcessResponse(sessionId: string, response: string) {
-  const session = sessionStore.get(sessionId);
+async function handleProcessResponse(sessionId: string, response: string) {
+  const session = await getSession(sessionId);
   
   if (!session) {
     return NextResponse.json(
@@ -83,10 +84,14 @@ function handleProcessResponse(sessionId: string, response: string) {
   
   // Advance the session
   const updatedSession = advanceSession(session, response, result);
-  sessionStore.set(sessionId, updatedSession);
+  
+  // Save updated session
+  await saveSession(updatedSession);
   
   // Get assets for the new node
   const assets = result.next_node ? getAssetsForNode(result.next_node.node_id) : [];
+  
+  console.log(`[PathRAG] Session ${sessionId}: ${session.current_node_id} -> ${updatedSession.current_node_id}`);
   
   return NextResponse.json({
     session_id: sessionId,
@@ -102,8 +107,8 @@ function handleProcessResponse(sessionId: string, response: string) {
   });
 }
 
-function handleGetState(sessionId: string) {
-  const session = sessionStore.get(sessionId);
+async function handleGetState(sessionId: string) {
+  const session = await getSession(sessionId);
   
   if (!session) {
     return NextResponse.json(
@@ -128,8 +133,8 @@ function handleGetState(sessionId: string) {
   });
 }
 
-function handleGetContext(sessionId: string) {
-  const session = sessionStore.get(sessionId);
+async function handleGetContext(sessionId: string) {
+  const session = await getSession(sessionId);
   
   if (!session) {
     return NextResponse.json(

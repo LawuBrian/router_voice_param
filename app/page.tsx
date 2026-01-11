@@ -95,10 +95,10 @@ export default function Home() {
       setProgress(data.progress);
       setStatus(data.status);
       
-      // Update voice AI context for the next response (don't force a response)
-      // The AI's natural VAD will handle responding to user speech
-      if (isConnected && data.voice_context) {
-        webrtcService.updateContext(data.voice_context);
+      // Advance AI to the new PathRAG node with updated context
+      // This updates instructions AND triggers AI to speak the next step
+      if (isConnected && data.voice_context && data.current_node?.voice_instruction) {
+        webrtcService.advanceToNode(data.voice_context, data.current_node.voice_instruction);
       }
       
       return data;
@@ -170,12 +170,9 @@ export default function Home() {
         timestamp: Date.now(),
       }]);
       
-      // After connection is stable, trigger the initial greeting
+      // After connection is stable, trigger the AI to speak based on its instructions
       setTimeout(() => {
-        if (session.current_node?.voice_instruction) {
-          // Use speakInstruction to deliver the first greeting
-          webrtcService.speakInstruction(session.current_node.voice_instruction);
-        }
+        webrtcService.triggerResponse();
       }, 1000); // Wait for connection to stabilize
       
     } catch (error) {
@@ -208,12 +205,12 @@ export default function Home() {
       node_id: currentNode?.node_id,
     }]);
     
-    // Process through PathRAG first to get the next node
+    // Process through PathRAG to advance to next node
     const result = await processResponse(response);
     
-    // If we got a new node, speak its instruction
-    if (result?.current_node?.voice_instruction) {
-      webrtcService.speakInstruction(result.current_node.voice_instruction);
+    // Advance AI to new node (context + voice instruction)
+    if (result?.current_node?.voice_instruction && result?.voice_context) {
+      webrtcService.advanceToNode(result.voice_context, result.current_node.voice_instruction);
     }
   };
 

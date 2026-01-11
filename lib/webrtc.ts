@@ -205,12 +205,16 @@ class WebRTCService {
     }
   }
 
-  // Update session context for the next AI response (does NOT trigger response)
-  // The AI's VAD will naturally respond to user speech
-  updateContext(nodeContext: string): void {
+  // Advance to a new PathRAG node - updates context AND triggers AI to speak
+  advanceToNode(nodeContext: string, voiceInstruction: string): void {
     if (this.dataChannel?.readyState === 'open') {
-      // Only update the session instructions - don't trigger a response
-      // The AI will use this context when it naturally responds to user
+      // 0. Cancel any in-progress response to prevent overlap
+      if (this.isResponseInProgress) {
+        this.dataChannel.send(JSON.stringify({ type: 'response.cancel' }));
+        this.isResponseInProgress = false;
+      }
+      
+      // 1. Update session instructions with new PathRAG context
       const updateMessage = {
         type: 'session.update',
         session: {
@@ -218,32 +222,33 @@ class WebRTCService {
         }
       };
       this.dataChannel.send(JSON.stringify(updateMessage));
-    }
-  }
-
-  // Force AI to speak a specific instruction (use sparingly - for node transitions)
-  speakInstruction(voiceInstruction: string): void {
-    if (this.dataChannel?.readyState === 'open') {
-      // Wait for any current response to finish before speaking
-      if (this.isResponseInProgress) {
-        // Don't interrupt - the AI is already speaking
-        console.log('[WebRTC] Response in progress, skipping instruction');
-        return;
-      }
       
-      // Inject the instruction as a user message (AI will respond to it)
-      const message = {
+      // 2. Inject system message with exact instruction to speak
+      const systemMessage = {
         type: 'conversation.item.create',
         item: {
           type: 'message',
-          role: 'user',
+          role: 'system',
           content: [{ 
             type: 'input_text', 
-            text: voiceInstruction 
+            text: `[NEXT STEP] Speak this instruction to the user: "${voiceInstruction}"`
           }]
         }
       };
-      this.dataChannel.send(JSON.stringify(message));
+      this.dataChannel.send(JSON.stringify(systemMessage));
+      
+      // 3. Trigger response
+      this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
+    }
+  }
+
+  // Trigger initial response (uses session instructions set during connect)
+  triggerResponse(): void {
+    if (this.dataChannel?.readyState === 'open') {
+      if (this.isResponseInProgress) {
+        console.log('[WebRTC] Response in progress, skipping');
+        return;
+      }
       this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
     }
   }
