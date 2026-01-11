@@ -22,6 +22,7 @@ class WebRTCService {
   private messageHandlers: ((message: WebRTCMessage) => void)[] = [];
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
+  private isResponseInProgress: boolean = false;
 
   async connect(voice: string = 'verse', nodeContext: string = ''): Promise<void> {
     // Ensure we're in a browser environment
@@ -141,6 +142,18 @@ class WebRTCService {
       const data = JSON.parse(event.data);
       
       switch (data.type) {
+        case 'response.created':
+          // Track that a response has started
+          this.isResponseInProgress = true;
+          console.log('[WebRTC] Response started');
+          break;
+          
+        case 'response.done':
+          // Response finished, safe to create new ones
+          this.isResponseInProgress = false;
+          console.log('[WebRTC] Response completed');
+          break;
+          
         case 'response.audio_transcript.done':
           this.notifyMessageHandlers({
             type: 'transcript',
@@ -174,6 +187,8 @@ class WebRTCService {
           break;
           
         case 'error':
+          // Reset response state on error
+          this.isResponseInProgress = false;
           this.notifyMessageHandlers({
             type: 'error',
             error: data.error?.message || 'An error occurred',
@@ -211,9 +226,21 @@ class WebRTCService {
     }
   }
 
+  // Cancel any in-progress response
+  private cancelCurrentResponse(): void {
+    if (this.dataChannel?.readyState === 'open' && this.isResponseInProgress) {
+      console.log('[WebRTC] Cancelling current response');
+      this.dataChannel.send(JSON.stringify({ type: 'response.cancel' }));
+      this.isResponseInProgress = false;
+    }
+  }
+
   // Send context update and trigger AI to speak the new instruction
   sendContextUpdate(nodeContext: string, voiceInstruction?: string): void {
     if (this.dataChannel?.readyState === 'open') {
+      // Cancel any in-progress response before creating a new one
+      this.cancelCurrentResponse();
+      
       // Update the session instructions with new PathRAG context
       const updateMessage = {
         type: 'session.update',
@@ -248,6 +275,9 @@ class WebRTCService {
   // Send a text message to trigger response
   sendTextMessage(text: string): void {
     if (this.dataChannel?.readyState === 'open') {
+      // Cancel any in-progress response before creating a new one
+      this.cancelCurrentResponse();
+      
       const message = {
         type: 'conversation.item.create',
         item: {
@@ -296,6 +326,7 @@ class WebRTCService {
     }
     
     this.analyser = null;
+    this.isResponseInProgress = false;
   }
 
   // Event subscription methods
