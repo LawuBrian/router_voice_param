@@ -38,7 +38,8 @@ export type AllowedAction =
   | "SOFT_REBOOT"
   | "RESEAT_CABLE"
   | "POWER_CYCLE"
-  | "RESET_CREDENTIALS";
+  | "RESET_CREDENTIALS"
+  | "FACTORY_RESET";
 
 // Escalation conditions
 export interface EscalationConditions {
@@ -83,13 +84,10 @@ export interface VendorProfile {
   vendor_id: string;
   name: string;
   default_gateway: string;
+  alt_gateway?: string;
   login_page_path: string;
   supported_firmwares: string[];
-  led_indicators: {
-    power: string[];
-    internet: string[];
-    wifi: string[];
-  };
+  led_indicators: Record<string, string[]>;
 }
 
 // Session state

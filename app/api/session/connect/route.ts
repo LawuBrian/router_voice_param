@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
     console.log(`[Session] Creating session with voice=${voice}`);
 
     // 1. Create Azure Realtime session
+    // NOTE: Matching working param_demo_backend - no turn_detection to avoid interruptions
     const sessionResponse = await fetch(AZURE_SESSIONS_URL, {
       method: 'POST',
       headers: {
@@ -66,12 +67,6 @@ export async function POST(request: NextRequest) {
         voice: voice,
         instructions: fullPrompt,
         input_audio_transcription: { model: 'whisper-1' },
-        turn_detection: {
-          type: 'server_vad',
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 500,
-        },
       }),
     });
 

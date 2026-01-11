@@ -54,23 +54,17 @@ class WebRTCService {
         }
       });
 
-      // Create peer connection
-      this.peerConnection = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-      });
+      // Create peer connection (no iceServers needed for Azure Realtime)
+      this.peerConnection = new RTCPeerConnection();
 
       // Create audio element for playback
       this.audioElement = document.createElement('audio');
       this.audioElement.autoplay = true;
 
-      // Handle incoming audio tracks
+      // Handle incoming audio tracks (matches working param_demo)
       this.peerConnection.ontrack = (event) => {
         if (event.streams.length > 0 && this.audioElement) {
           this.audioElement.srcObject = event.streams[0];
-          this.notifyMessageHandlers({ 
-            type: 'speech_started', 
-            timestamp: Date.now() 
-          });
         }
       };
 
@@ -142,18 +136,16 @@ class WebRTCService {
       const data = JSON.parse(event.data);
       
       switch (data.type) {
+        // Response lifecycle - track to prevent overlapping responses
         case 'response.created':
-          // Track that a response has started
           this.isResponseInProgress = true;
-          console.log('[WebRTC] Response started');
           break;
           
         case 'response.done':
-          // Response finished, safe to create new ones
           this.isResponseInProgress = false;
-          console.log('[WebRTC] Response completed');
           break;
           
+        // Model transcript (AI finished speaking a segment)
         case 'response.audio_transcript.done':
           this.notifyMessageHandlers({
             type: 'transcript',
@@ -163,6 +155,7 @@ class WebRTCService {
           });
           break;
           
+        // User transcript (user finished speaking)
         case 'conversation.item.input_audio_transcription.completed':
           this.notifyMessageHandlers({
             type: 'transcript',
@@ -172,22 +165,8 @@ class WebRTCService {
           });
           break;
           
-        case 'input_audio_buffer.speech_started':
-          this.notifyMessageHandlers({
-            type: 'speech_started',
-            timestamp: Date.now(),
-          });
-          break;
-          
-        case 'input_audio_buffer.speech_stopped':
-          this.notifyMessageHandlers({
-            type: 'speech_stopped',
-            timestamp: Date.now(),
-          });
-          break;
-          
+        // Error handling
         case 'error':
-          // Reset response state on error
           this.isResponseInProgress = false;
           this.notifyMessageHandlers({
             type: 'error',
@@ -196,9 +175,9 @@ class WebRTCService {
           });
           break;
           
+        // Silently ignore other message types (don't log spam)
         default:
-          // Log unhandled message types for debugging
-          console.log('[WebRTC] Unhandled message type:', data.type);
+          break;
       }
     } catch (error) {
       console.error('[WebRTC] Error parsing message:', error);
@@ -226,22 +205,12 @@ class WebRTCService {
     }
   }
 
-  // Cancel any in-progress response
-  private cancelCurrentResponse(): void {
-    if (this.dataChannel?.readyState === 'open' && this.isResponseInProgress) {
-      console.log('[WebRTC] Cancelling current response');
-      this.dataChannel.send(JSON.stringify({ type: 'response.cancel' }));
-      this.isResponseInProgress = false;
-    }
-  }
-
-  // Send context update and trigger AI to speak the new instruction
-  sendContextUpdate(nodeContext: string, voiceInstruction?: string): void {
+  // Update session context for the next AI response (does NOT trigger response)
+  // The AI's VAD will naturally respond to user speech
+  updateContext(nodeContext: string): void {
     if (this.dataChannel?.readyState === 'open') {
-      // Cancel any in-progress response before creating a new one
-      this.cancelCurrentResponse();
-      
-      // Update the session instructions with new PathRAG context
+      // Only update the session instructions - don't trigger a response
+      // The AI will use this context when it naturally responds to user
       const updateMessage = {
         type: 'session.update',
         session: {
@@ -249,49 +218,36 @@ class WebRTCService {
         }
       };
       this.dataChannel.send(JSON.stringify(updateMessage));
-      
-      // If we have a specific instruction to speak, inject it and trigger response
-      if (voiceInstruction) {
-        // Add system guidance to speak the instruction
-        const systemMessage = {
-          type: 'conversation.item.create',
-          item: {
-            type: 'message',
-            role: 'system',
-            content: [{ 
-              type: 'input_text', 
-              text: `[PathRAG has advanced to a new step. Speak this instruction to the user now: "${voiceInstruction}"]` 
-            }]
-          }
-        };
-        this.dataChannel.send(JSON.stringify(systemMessage));
-        
-        // Trigger AI to respond (speak the instruction)
-        this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
-      }
     }
   }
 
-  // Send a text message to trigger response
-  sendTextMessage(text: string): void {
+  // Force AI to speak a specific instruction (use sparingly - for node transitions)
+  speakInstruction(voiceInstruction: string): void {
     if (this.dataChannel?.readyState === 'open') {
-      // Cancel any in-progress response before creating a new one
-      this.cancelCurrentResponse();
+      // Wait for any current response to finish before speaking
+      if (this.isResponseInProgress) {
+        // Don't interrupt - the AI is already speaking
+        console.log('[WebRTC] Response in progress, skipping instruction');
+        return;
+      }
       
+      // Inject the instruction as a user message (AI will respond to it)
       const message = {
         type: 'conversation.item.create',
         item: {
           type: 'message',
           role: 'user',
-          content: [{ type: 'input_text', text }]
+          content: [{ 
+            type: 'input_text', 
+            text: voiceInstruction 
+          }]
         }
       };
       this.dataChannel.send(JSON.stringify(message));
-      
-      // Trigger response
       this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
     }
   }
+
 
   disconnect(): void {
     this.cleanup();

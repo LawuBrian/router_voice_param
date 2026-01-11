@@ -95,13 +95,10 @@ export default function Home() {
       setProgress(data.progress);
       setStatus(data.status);
       
-      // Update voice AI context and trigger speech if connected and node advanced
-      if (isConnected && data.voice_context && data.current_node) {
-        // Pass both the context and the specific instruction to speak
-        webrtcService.sendContextUpdate(
-          data.voice_context, 
-          data.current_node.voice_instruction
-        );
+      // Update voice AI context for the next response (don't force a response)
+      // The AI's natural VAD will handle responding to user speech
+      if (isConnected && data.voice_context) {
+        webrtcService.updateContext(data.voice_context);
       }
       
       return data;
@@ -173,15 +170,13 @@ export default function Home() {
         timestamp: Date.now(),
       }]);
       
-      // After connection, trigger Akili to speak the first instruction
+      // After connection is stable, trigger the initial greeting
       setTimeout(() => {
         if (session.current_node?.voice_instruction) {
-          webrtcService.sendContextUpdate(
-            session.voice_context,
-            session.current_node.voice_instruction
-          );
+          // Use speakInstruction to deliver the first greeting
+          webrtcService.speakInstruction(session.current_node.voice_instruction);
         }
-      }, 1000); // Small delay to ensure connection is stable
+      }, 1000); // Wait for connection to stabilize
       
     } catch (error) {
       console.error('Error starting session:', error);
@@ -203,11 +198,8 @@ export default function Home() {
     setTranscript([]);
   };
 
-  // Handle quick response from diagnostic panel
-  const handleQuickResponse = (response: string) => {
-    // Send as text message to voice AI
-    webrtcService.sendTextMessage(response);
-    
+  // Handle quick response from diagnostic panel (button clicks)
+  const handleQuickResponse = async (response: string) => {
     // Add to transcript
     setTranscript(prev => [...prev, {
       role: 'user',
@@ -216,8 +208,13 @@ export default function Home() {
       node_id: currentNode?.node_id,
     }]);
     
-    // Process through PathRAG
-    processResponse(response);
+    // Process through PathRAG first to get the next node
+    const result = await processResponse(response);
+    
+    // If we got a new node, speak its instruction
+    if (result?.current_node?.voice_instruction) {
+      webrtcService.speakInstruction(result.current_node.voice_instruction);
+    }
   };
 
   // Restart session

@@ -22,13 +22,31 @@ export const VENDOR_PROFILES: Record<string, VendorProfile> = {
   'tplink': {
     vendor_id: 'tplink',
     name: 'TP-Link',
-    default_gateway: '192.168.0.1',
+    default_gateway: 'tplinkmodem.net',
+    alt_gateway: '192.168.1.1',
     login_page_path: '/',
-    supported_firmwares: ['v2', 'v3', 'v4'],
+    supported_firmwares: ['v2', 'v3', 'v4', 'v5'],
     led_indicators: {
       power: ['solid_green', 'off'],
       internet: ['solid_green', 'solid_orange', 'blinking_green', 'off'],
       wifi: ['solid_green', 'blinking_green', 'off'],
+      signal: ['1_bar', '2_bars', '3_bars', '4_bars', 'off'],
+    },
+  },
+  'tplink_4g': {
+    vendor_id: 'tplink_4g',
+    name: 'TP-Link 4G/LTE Router',
+    default_gateway: 'tplinkmodem.net',
+    alt_gateway: '192.168.1.1',
+    login_page_path: '/',
+    supported_firmwares: ['v3', 'v5'],
+    led_indicators: {
+      power: ['solid_green', 'off'],
+      internet: ['solid_green', 'solid_orange', 'off'],
+      wifi_24g: ['solid_green', 'blinking_green', 'off'],
+      wifi_5g: ['solid_green', 'blinking_green', 'off'],
+      signal: ['1_bar', '2_bars', '3_bars', '4_bars', 'off'],
+      lan: ['solid_green', 'off'],
     },
   },
   'netgear': {
@@ -88,29 +106,27 @@ export const API_CONFIG = {
 };
 
 // Akili system prompt for voice AI - PathRAG feeds diagnostic context
-export const AKILI_SYSTEM_PROMPT = `You are Akili, a dedicated Customer Service Agent for a Telecommunications Company. Your SOLE purpose is to help customers troubleshoot internet/network issues.
+export const AKILI_SYSTEM_PROMPT = `You are Akili, a customer service agent helping troubleshoot internet issues.
 
-CRITICAL RULES (NEVER VIOLATE):
-1. REFUSE any off-topic questions. If asked about anything unrelated to internet/routers (sports, entertainment, math, etc.), say: "I'm here to help with your internet connection. What issue are you experiencing?"
-2. FOLLOW the diagnostic instructions provided in the CURRENT DIAGNOSTIC NODE section EXACTLY
-3. SPEAK the instruction from the diagnostic node - do not improvise troubleshooting
-4. WAIT for the user to confirm they've done each step before moving on
-5. ONE instruction at a time - never stack multiple steps
+CRITICAL RULES:
+1. ONLY speak what is in YOUR TASK below - do not add extra information
+2. Say EXACTLY what YOUR TASK says, then STOP and wait for the user to respond
+3. Do NOT mention lights, LEDs, or technical details until the diagnostic step tells you to
+4. Do NOT skip ahead or combine steps
+5. ONE instruction only, then wait
 
-HOW THIS WORKS:
-- You receive context from PathRAG (the diagnostic engine) about the current step
-- Speak the instruction provided in voice_instruction
-- Wait for user response
-- PathRAG will process their answer and give you the next step
+HOW TO RESPOND:
+- Speak the instruction in YOUR TASK naturally
+- Stop talking and wait for the user
+- If user is confused, rephrase the SAME instruction simply
+- If user answers, PathRAG will give you the next step
 
 VOICE STYLE:
-- Be warm, patient, and reassuring
-- Speak clearly, especially for technical terms
-- Keep responses concise - under 3 sentences when possible
-- If user seems confused, rephrase the same instruction more simply
-- If user says something unexpected, ask them to clarify
+- Warm and patient
+- Concise - under 2 sentences when possible
+- Do not ramble or over-explain
 
-IMPORTANT: The diagnostic context below tells you EXACTLY what to say and ask. Follow it precisely.`;
+IMPORTANT: Only say what YOUR TASK tells you. Nothing more.`;
 
 // LED status descriptions for voice
 export const LED_DESCRIPTIONS = {
