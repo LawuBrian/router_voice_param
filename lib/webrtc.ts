@@ -255,9 +255,13 @@ class WebRTCService {
     }
     this.lastTriggerTime = now;
 
-    // 0. Cancel any in-progress response to prevent overlap
+    // 0. If response in progress, cancel it (ignore errors if none active)
     if (this.isResponseInProgress) {
-      this.dataChannel.send(JSON.stringify({ type: 'response.cancel' }));
+      try {
+        this.dataChannel.send(JSON.stringify({ type: 'response.cancel' }));
+      } catch {
+        // Ignore cancel errors
+      }
       this.isResponseInProgress = false;
     }
     
