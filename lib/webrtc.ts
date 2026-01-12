@@ -288,18 +288,6 @@ class WebRTCService {
     this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
   }
 
-  // Trigger initial response (uses session instructions set during connect)
-  triggerResponse(): void {
-    if (this.dataChannel?.readyState === 'open') {
-      if (this.isResponseInProgress) {
-        console.log('[WebRTC] Response in progress, skipping');
-        return;
-      }
-      this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
-    }
-  }
-
-
   disconnect(): void {
     this.cleanup();
     this.notifyConnectionHandlers(false);

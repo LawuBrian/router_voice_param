@@ -171,9 +171,12 @@ export default function Home() {
         timestamp: Date.now(),
       }]);
       
-      // After connection is stable, trigger the AI to speak based on its instructions
+      // After connection is stable, trigger the initial greeting using PathRAG node
+      // This ensures the greeting comes from the entry_start node, not the system prompt
       setTimeout(() => {
-        webrtcService.triggerResponse();
+        if (session.voice_context && session.current_node?.voice_instruction) {
+          webrtcService.advanceToNode(session.voice_context, session.current_node.voice_instruction);
+        }
       }, 1000); // Wait for connection to stabilize
       
     } catch (error) {
