@@ -133,9 +133,9 @@ export default function Home() {
         if (msg.role === 'user') {
           const nextInstruction = await processResponse(msg.content);
           
-          // If node changed, speak the new instruction
+          // If node changed, update the AI's context with new instruction
           if (nextInstruction) {
-            webrtcService.speakInstruction(nextInstruction);
+            webrtcService.updateContext(nextInstruction);
           }
         }
       } else if (msg.type === 'speech_started') {
@@ -212,9 +212,9 @@ export default function Home() {
     // Process through PathRAG
     const nextInstruction = await processResponse(response);
     
-    // If node changed, speak the new instruction
+    // If node changed, update the AI's context
     if (nextInstruction && isConnected) {
-      webrtcService.speakInstruction(nextInstruction);
+      webrtcService.updateContext(nextInstruction);
     }
   };
 

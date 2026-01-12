@@ -180,54 +180,31 @@ class WebRTCService {
     console.log('[WebRTC] Triggered response');
   }
 
-  // Speak a specific instruction (used by PathRAG)
-  speakInstruction(instruction: string): void {
+  // Update the AI's context with new PathRAG node instruction
+  updateContext(nodeInstruction: string): void {
     if (this.dataChannel?.readyState !== 'open') {
       console.log('[WebRTC] Data channel not ready');
       return;
     }
     
-    if (this.isProcessing) {
-      console.log('[WebRTC] Already processing, queuing...');
-      setTimeout(() => this.speakInstruction(instruction), 1000);
-      return;
-    }
-    
-    this.isProcessing = true;
-    
-    // Update session with new instruction
+    // Update session instructions with the new node context
     const updateMessage = {
       type: 'session.update',
       session: {
-        instructions: `You are Akili. Your ONLY job is to speak exactly what you're told.
-        
-SAY: "${instruction}"
+        instructions: `You are Akili, a router troubleshooting assistant.
 
-Speak this EXACTLY. No greetings. No extras. Just these words.`
+YOUR NEXT INSTRUCTION TO SPEAK:
+"${nodeInstruction}"
+
+RULES:
+- Speak the instruction above naturally
+- Keep it short (1-2 sentences)
+- Wait for user to respond
+- Do NOT add extra commentary`
       }
     };
     this.dataChannel.send(JSON.stringify(updateMessage));
-    
-    // Trigger response
-    setTimeout(() => {
-      this.dataChannel?.send(JSON.stringify({ type: 'response.create' }));
-      console.log('[WebRTC] Speaking instruction:', instruction);
-    }, 100);
-  }
-
-  // Commit user audio and trigger response (for manual VAD)
-  commitAudioAndRespond(instruction: string): void {
-    if (this.dataChannel?.readyState !== 'open') {
-      return;
-    }
-    
-    // Commit any pending audio
-    this.dataChannel.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-    
-    // Then speak the instruction
-    setTimeout(() => {
-      this.speakInstruction(instruction);
-    }, 200);
+    console.log('[WebRTC] Updated context:', nodeInstruction);
   }
 
   disconnect(): void {

@@ -61,7 +61,7 @@ export default function Header() {
           <div className="hidden sm:block h-4 w-px bg-pathrag-border" />
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-pathrag-surface rounded-lg border border-pathrag-border">
             <span className="text-[10px] font-bold text-pathrag-text-muted uppercase tracking-wider">
-              v2.1
+              v2.2
             </span>
           </div>
         </div>

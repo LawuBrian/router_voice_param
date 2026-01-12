@@ -88,8 +88,13 @@ export async function POST(request: NextRequest) {
         voice: voice,
         instructions: fullPrompt,
         input_audio_transcription: { model: 'whisper-1' },
-        // Disable automatic turn detection - we control when AI speaks
-        turn_detection: null,
+        // Use server VAD for voice detection
+        turn_detection: {
+          type: 'server_vad',
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 500,
+        },
       }),
     });
 
