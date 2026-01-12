@@ -1,6 +1,6 @@
 // ============================================
 // WebRTC Service for Azure GPT Realtime Voice
-// SIMPLIFIED - Matches working param_demo pattern
+// CONTROLLED ORCHESTRATION - Manual turn management
 // ============================================
 
 import { WebRTCMessage } from './types';
@@ -10,7 +10,6 @@ export interface NegotiateResult {
   error?: string;
 }
 
-// Check if we're in a browser environment
 const isBrowser = typeof window !== 'undefined';
 
 class WebRTCService {
@@ -22,8 +21,9 @@ class WebRTCService {
   private messageHandlers: ((message: WebRTCMessage) => void)[] = [];
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
+  private isProcessing: boolean = false;
 
-  async connect(voice: string = 'verse', nodeContext: string = ''): Promise<void> {
+  async connect(voice: string = 'verse', initialInstruction: string = ''): Promise<void> {
     if (!isBrowser) {
       throw new Error('WebRTC is only available in browser environment');
     }
@@ -34,36 +34,35 @@ class WebRTCService {
     }
 
     try {
-      // Get microphone access
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true }
       });
 
-      // Create peer connection (no iceServers needed for Azure Realtime)
       this.peerConnection = new RTCPeerConnection();
 
-      // Create audio element for playback
       this.audioElement = document.createElement('audio');
       this.audioElement.autoplay = true;
 
-      // Handle incoming audio tracks
       this.peerConnection.ontrack = (event) => {
         if (event.streams.length > 0 && this.audioElement) {
           this.audioElement.srcObject = event.streams[0];
         }
       };
 
-      // Add local audio track
       const audioTrack = this.localStream.getAudioTracks()[0];
       this.peerConnection.addTrack(audioTrack, this.localStream);
 
-      // Create data channel for events
       this.dataChannel = this.peerConnection.createDataChannel('oai-events');
 
       this.dataChannel.onopen = () => {
         console.log('[WebRTC] Data channel opened');
         this.notifyConnectionHandlers(true);
         this.notifyMessageHandlers({ type: 'connected', timestamp: Date.now() });
+        
+        // Trigger the initial greeting after connection
+        setTimeout(() => {
+          this.triggerResponse();
+        }, 500);
       };
 
       this.dataChannel.onmessage = (event) => this.handleDataChannelMessage(event);
@@ -72,7 +71,6 @@ class WebRTCService {
         console.error('[WebRTC] Data channel error:', error);
       };
 
-      // Handle connection state changes
       this.peerConnection.onconnectionstatechange = () => {
         const state = this.peerConnection?.connectionState;
         console.log('[WebRTC] Connection state:', state);
@@ -82,25 +80,19 @@ class WebRTCService {
         }
       };
 
-      // Create and send offer
       const offer = await this.peerConnection.createOffer();
       await this.peerConnection.setLocalDescription(offer);
 
-      // Negotiate via backend - the system prompt and context are set here
-      const result = await this.negotiateSdp(voice, offer.sdp!, nodeContext);
+      const result = await this.negotiateSdp(voice, offer.sdp!, initialInstruction);
 
       if (result.error) {
         throw new Error(result.error);
       }
 
-      // Set remote description
       await this.peerConnection.setRemoteDescription({ 
         type: 'answer', 
         sdp: result.sdp! 
       });
-
-      // NOTE: We do NOT manually trigger response.create
-      // The AI will start speaking automatically based on the system prompt
 
     } catch (error: unknown) {
       console.error('[WebRTC] Connection error:', error);
@@ -114,7 +106,11 @@ class WebRTCService {
       const data = JSON.parse(event.data);
       
       switch (data.type) {
-        // Model transcript (AI finished speaking a segment)
+        case 'response.done':
+          this.isProcessing = false;
+          console.log('[WebRTC] Response complete');
+          break;
+          
         case 'response.audio_transcript.done':
           this.notifyMessageHandlers({
             type: 'transcript',
@@ -124,7 +120,6 @@ class WebRTCService {
           });
           break;
           
-        // User transcript (user finished speaking)
         case 'conversation.item.input_audio_transcription.completed':
           this.notifyMessageHandlers({
             type: 'transcript',
@@ -134,16 +129,11 @@ class WebRTCService {
           });
           break;
           
-        // Error handling
         case 'error':
-          this.notifyMessageHandlers({
-            type: 'error',
-            error: data.error?.message || 'An error occurred',
-            timestamp: Date.now(),
-          });
+          this.isProcessing = false;
+          console.error('[WebRTC] Server error:', data.error);
           break;
           
-        // Silently ignore other message types
         default:
           break;
       }
@@ -152,12 +142,12 @@ class WebRTCService {
     }
   }
 
-  private async negotiateSdp(voice: string, sdp: string, nodeContext: string): Promise<NegotiateResult> {
+  private async negotiateSdp(voice: string, sdp: string, initialInstruction: string): Promise<NegotiateResult> {
     try {
       const response = await fetch('/api/session/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voice, sdp, nodeContext }),
+        body: JSON.stringify({ voice, sdp, initialInstruction }),
       });
 
       if (!response.ok) {
@@ -171,6 +161,73 @@ class WebRTCService {
       const errorMessage = error instanceof Error ? error.message : 'Network error';
       return { error: errorMessage };
     }
+  }
+
+  // Trigger the AI to respond (for initial greeting)
+  triggerResponse(): void {
+    if (this.dataChannel?.readyState !== 'open') {
+      console.log('[WebRTC] Data channel not ready');
+      return;
+    }
+    
+    if (this.isProcessing) {
+      console.log('[WebRTC] Already processing');
+      return;
+    }
+    
+    this.isProcessing = true;
+    this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
+    console.log('[WebRTC] Triggered response');
+  }
+
+  // Speak a specific instruction (used by PathRAG)
+  speakInstruction(instruction: string): void {
+    if (this.dataChannel?.readyState !== 'open') {
+      console.log('[WebRTC] Data channel not ready');
+      return;
+    }
+    
+    if (this.isProcessing) {
+      console.log('[WebRTC] Already processing, queuing...');
+      setTimeout(() => this.speakInstruction(instruction), 1000);
+      return;
+    }
+    
+    this.isProcessing = true;
+    
+    // Update session with new instruction
+    const updateMessage = {
+      type: 'session.update',
+      session: {
+        instructions: `You are Akili. Your ONLY job is to speak exactly what you're told.
+        
+SAY: "${instruction}"
+
+Speak this EXACTLY. No greetings. No extras. Just these words.`
+      }
+    };
+    this.dataChannel.send(JSON.stringify(updateMessage));
+    
+    // Trigger response
+    setTimeout(() => {
+      this.dataChannel?.send(JSON.stringify({ type: 'response.create' }));
+      console.log('[WebRTC] Speaking instruction:', instruction);
+    }, 100);
+  }
+
+  // Commit user audio and trigger response (for manual VAD)
+  commitAudioAndRespond(instruction: string): void {
+    if (this.dataChannel?.readyState !== 'open') {
+      return;
+    }
+    
+    // Commit any pending audio
+    this.dataChannel.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+    
+    // Then speak the instruction
+    setTimeout(() => {
+      this.speakInstruction(instruction);
+    }, 200);
   }
 
   disconnect(): void {
@@ -206,9 +263,9 @@ class WebRTCService {
     }
     
     this.analyser = null;
+    this.isProcessing = false;
   }
 
-  // Event subscription methods
   onConnectionChange(handler: (connected: boolean) => void): () => void {
     this.connectionHandlers.push(handler);
     return () => {
@@ -231,7 +288,6 @@ class WebRTCService {
     this.messageHandlers.forEach(handler => handler(message));
   }
 
-  // Get audio analyser for visualization
   getAnalyser(): AnalyserNode | null {
     if (!isBrowser) return null;
     
@@ -256,12 +312,10 @@ class WebRTCService {
     return this.analyser;
   }
 
-  // Check if connected
   isConnected(): boolean {
     return this.peerConnection?.connectionState === 'connected' && 
            this.dataChannel?.readyState === 'open';
   }
 }
 
-// Create singleton instance
 export const webrtcService = new WebRTCService();

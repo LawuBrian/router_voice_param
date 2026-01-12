@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import Header from '@/components/Header';
 import PhaseTracker from '@/components/PhaseTracker';
@@ -44,6 +44,9 @@ export default function Home() {
   // Transcript state
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  
+  // Track current node to detect changes
+  const lastNodeIdRef = useRef<string | null>(null);
 
   // Create a new PathRAG session
   const createSession = useCallback(async () => {
@@ -62,6 +65,7 @@ export default function Home() {
       setCurrentAssets(data.assets || []);
       setCurrentPhase(data.phase);
       setProgress(data.progress);
+      lastNodeIdRef.current = data.current_node?.node_id || null;
       
       return data;
     } catch (error) {
@@ -70,9 +74,9 @@ export default function Home() {
     }
   }, []);
 
-  // Process user response through PathRAG (just update state, don't trigger AI)
-  const processResponse = useCallback(async (response: string) => {
-    if (!sessionId) return;
+  // Process user response through PathRAG
+  const processResponse = useCallback(async (response: string): Promise<string | null> => {
+    if (!sessionId) return null;
     
     try {
       const result = await fetch('/api/pathrag', {
@@ -88,18 +92,28 @@ export default function Home() {
       if (!result.ok) throw new Error('Failed to process response');
       
       const data = await result.json();
+      
+      // Update UI state
       setCurrentNode(data.current_node);
       setCurrentAssets(data.assets || []);
       setCurrentPhase(data.phase);
       setProgress(data.progress);
       setStatus(data.status);
       
-      // NOTE: We do NOT manually trigger the AI to speak
-      // The AI responds naturally based on its conversation context
+      // Check if node changed
+      const newNodeId = data.current_node?.node_id;
+      const nodeChanged = newNodeId && newNodeId !== lastNodeIdRef.current;
       
-      return data;
+      if (nodeChanged) {
+        lastNodeIdRef.current = newNodeId;
+        // Return the new instruction to speak
+        return data.current_node?.voice_instruction || null;
+      }
+      
+      return null;
     } catch (error) {
       console.error('Error processing response:', error);
+      return null;
     }
   }, [sessionId]);
 
@@ -115,9 +129,14 @@ export default function Home() {
           node_id: currentNode?.node_id,
         }]);
 
-        // If it's a user message, process through PathRAG to update UI state
+        // If it's a user message, process through PathRAG
         if (msg.role === 'user') {
-          await processResponse(msg.content);
+          const nextInstruction = await processResponse(msg.content);
+          
+          // If node changed, speak the new instruction
+          if (nextInstruction) {
+            webrtcService.speakInstruction(nextInstruction);
+          }
         }
       } else if (msg.type === 'speech_started') {
         setIsSpeaking(true);
@@ -125,11 +144,6 @@ export default function Home() {
         setIsSpeaking(false);
       } else if (msg.type === 'error') {
         console.error('WebRTC error:', msg.error);
-        setTranscript(prev => [...prev, {
-          role: 'system',
-          text: `Error: ${msg.error}`,
-          timestamp: msg.timestamp,
-        }]);
       }
     };
 
@@ -150,16 +164,12 @@ export default function Home() {
       // Create PathRAG diagnostic session first
       const session = await createSession();
       
-      // Store the initial node
-      setCurrentNode(session.current_node);
-      setCurrentAssets(session.assets || []);
-      setCurrentPhase(session.phase);
-      setProgress(session.progress);
+      // Get initial greeting from the entry node
+      const initialInstruction = session.current_node?.voice_instruction || 
+        "Hi! I'm Akili. I'll help fix your internet. Ready to start?";
       
-      // Connect voice with PathRAG context
-      // The system prompt includes the initial instruction
-      // The AI will start speaking automatically
-      await webrtcService.connect(currentVoice, session.voice_context);
+      // Connect voice with initial instruction
+      await webrtcService.connect(currentVoice, initialInstruction);
       
       // Add initial system message
       setTranscript([{
@@ -167,8 +177,6 @@ export default function Home() {
         text: 'Voice session started. Akili is connecting...',
         timestamp: Date.now(),
       }]);
-      
-      // NOTE: No manual trigger needed - AI starts automatically
       
     } catch (error) {
       console.error('Error starting session:', error);
@@ -188,6 +196,7 @@ export default function Home() {
     setProgress(0);
     setStatus('active');
     setTranscript([]);
+    lastNodeIdRef.current = null;
   };
 
   // Handle quick response from diagnostic panel (button clicks)
@@ -200,11 +209,13 @@ export default function Home() {
       node_id: currentNode?.node_id,
     }]);
     
-    // Process through PathRAG to update UI state
-    await processResponse(response);
+    // Process through PathRAG
+    const nextInstruction = await processResponse(response);
     
-    // NOTE: The AI will respond naturally to the conversation
-    // We don't need to manually trigger it
+    // If node changed, speak the new instruction
+    if (nextInstruction && isConnected) {
+      webrtcService.speakInstruction(nextInstruction);
+    }
   };
 
   // Restart session

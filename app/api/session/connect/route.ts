@@ -1,10 +1,9 @@
 // ============================================
 // PathRAG Session Connect API Route
-// Handles WebRTC SDP negotiation with Azure Realtime
+// Controlled orchestration with function calling
 // ============================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { AKILI_SYSTEM_PROMPT } from '@/lib/constants';
 
 // Azure Realtime API configuration
 const AZURE_SESSIONS_URL = process.env.AZURE_REALTIME_SESSIONS_URL || 
@@ -17,6 +16,7 @@ interface ConnectRequest {
   voice?: string;
   sdp: string;
   nodeContext?: string;
+  initialInstruction?: string;
 }
 
 interface SessionResponse {
@@ -27,6 +27,28 @@ interface SessionResponse {
     expires_at: number;
   };
 }
+
+// Strict system prompt for controlled orchestration
+const ORCHESTRATOR_PROMPT = `You are Akili, a voice assistant that speaks EXACTLY what you are instructed to say.
+
+=== CRITICAL RULES ===
+1. When you see "SAY:" followed by text in quotes, speak EXACTLY that text
+2. Do NOT add greetings, transitions, or extra words
+3. Do NOT improvise or explain
+4. Do NOT ask additional questions
+5. After speaking, STOP and wait silently
+
+=== EXAMPLE ===
+SAY: "What brand is your router?"
+You speak: "What brand is your router?"
+
+=== FORBIDDEN ===
+- Adding "Great!" or "Sure!" or "Let me help you"
+- Adding "First..." or "Now..."  
+- Asking about phones, computers, devices
+- Speaking anything not in the SAY instruction
+
+You are a voice terminal. You output exactly what you're told. Nothing more.`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,15 +69,14 @@ export async function POST(request: NextRequest) {
     }
 
     const voice = body.voice || 'verse';
-    const nodeContext = body.nodeContext || '';
+    const initialInstruction = body.initialInstruction || "Hi! I'm Akili. I'll help fix your internet. Ready to start?";
 
-    // Build the full system prompt with PathRAG diagnostic context
-    const fullPrompt = buildSystemPrompt(nodeContext);
+    // Build prompt with initial instruction
+    const fullPrompt = ORCHESTRATOR_PROMPT + `\n\n=== YOUR FIRST INSTRUCTION ===\nSAY: "${initialInstruction}"`;
 
-    console.log(`[Session] Creating session with voice=${voice}`);
+    console.log(`[Session] Creating controlled session with voice=${voice}`);
 
-    // 1. Create Azure Realtime session
-    // NOTE: Matching working param_demo_backend - no turn_detection to avoid interruptions
+    // Create Azure Realtime session with strict control
     const sessionResponse = await fetch(AZURE_SESSIONS_URL, {
       method: 'POST',
       headers: {
@@ -67,6 +88,8 @@ export async function POST(request: NextRequest) {
         voice: voice,
         instructions: fullPrompt,
         input_audio_transcription: { model: 'whisper-1' },
+        // Disable automatic turn detection - we control when AI speaks
+        turn_detection: null,
       }),
     });
 
@@ -90,7 +113,7 @@ export async function POST(request: NextRequest) {
 
     console.log('[Session] Session created successfully');
 
-    // 2. Negotiate SDP with Azure WebRTC endpoint
+    // Negotiate SDP with Azure WebRTC endpoint
     const sdpResponse = await fetch(AZURE_WEBRTC_URL, {
       method: 'POST',
       headers: {
@@ -113,7 +136,6 @@ export async function POST(request: NextRequest) {
 
     console.log('[Session] SDP exchange successful');
 
-    // 3. Return only the SDP answer (no token exposed)
     return NextResponse.json({ sdp: answerSdp });
 
   } catch (error) {
@@ -123,16 +145,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-function buildSystemPrompt(nodeContext: string): string {
-  let prompt = AKILI_SYSTEM_PROMPT;
-
-  // Add PathRAG diagnostic node context if provided
-  if (nodeContext) {
-    prompt += `\n\n=== CURRENT DIAGNOSTIC STEP ===\n${nodeContext}`;
-    prompt += `\n\nIMPORTANT: Follow the diagnostic flow above. Ask the questions in order.`;
-  }
-
-  return prompt;
 }
