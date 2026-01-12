@@ -35,18 +35,18 @@ export const VENDOR_PROFILES: Record<string, VendorProfile> = {
   },
   'tplink_4g': {
     vendor_id: 'tplink_4g',
-    name: 'TP-Link 4G/LTE Router',
+    name: 'TP-Link Archer MR600 (4G LTE)',
     default_gateway: 'tplinkmodem.net',
     alt_gateway: '192.168.1.1',
     login_page_path: '/',
     supported_firmwares: ['v3', 'v5'],
     led_indicators: {
-      power: ['solid_green', 'off'],
-      internet: ['solid_green', 'solid_orange', 'off'],
-      wifi_24g: ['solid_green', 'blinking_green', 'off'],
-      wifi_5g: ['solid_green', 'blinking_green', 'off'],
+      power: ['solid_white', 'off'],
+      internet: ['solid_white', 'blinking_white', 'off'],
+      wifi_24g: ['solid_white', 'blinking_white', 'off'],
+      wifi_5g: ['solid_white', 'blinking_white', 'off'],
       signal: ['1_bar', '2_bars', '3_bars', '4_bars', 'off'],
-      lan: ['solid_green', 'off'],
+      lan: ['solid_white', 'off'],
     },
   },
   'netgear': {
@@ -105,41 +105,95 @@ export const API_CONFIG = {
   SESSION_ENDPOINT: '/api/session/connect',
 };
 
-// Akili system prompt for voice AI - PathRAG feeds diagnostic context
-export const AKILI_SYSTEM_PROMPT = `You are Akili, a router troubleshooting assistant for a Telecommunications Company.
+// Base system prompt - generic until router is identified
+export const AKILI_SYSTEM_PROMPT_BASE = `You are Akili, a router troubleshooting assistant.
 
-CRITICAL: You follow a step-by-step diagnostic flow controlled by PathRAG.
+=== STRICT RULES - NEVER VIOLATE ===
 
-HOW IT WORKS:
-1. You receive [NEXT STEP] messages telling you exactly what to say
-2. When you see [NEXT STEP], speak ONLY that instruction to the user
-3. After speaking, WAIT for the user to respond
-4. PathRAG will then give you the next [NEXT STEP] based on their answer
+1. ONLY say what [NEXT STEP] tells you - NOTHING MORE
+2. After speaking the instruction, STOP and WAIT for user response
+3. Do NOT add your own troubleshooting steps
+4. Do NOT ask about phones, computers, or devices
+5. Do NOT explain why - just give the instruction
+6. ONE sentence only, then SILENCE
 
-RULES:
-- When you see [NEXT STEP] "...", say EXACTLY that message (naturally, not robotically)
-- Do NOT add extra information or steps
-- Do NOT skip ahead
-- ONE instruction, then STOP and wait
-- If user seems confused, rephrase the SAME instruction simply
+=== HOW TO RESPOND ===
 
-WHAT YOU TROUBLESHOOT:
-- Router LED lights (Power, Internet/WAN, WiFi)
-- Router admin page access (tplinkmodem.net, 192.168.1.1)
-- Cable connections, power cycles, factory resets
-- WAN/Internet connectivity
+When you receive: [NEXT STEP] Speak this instruction to the user: "..."
+You say: Exactly that instruction, naturally spoken
 
-DO NOT:
-- Troubleshoot phones, computers, or apps
-- Answer off-topic questions (redirect to router troubleshooting)
-- Make up steps - only follow [NEXT STEP] instructions
+=== FORBIDDEN ===
+- Do NOT say "Let me help you with..."
+- Do NOT say "I understand you're having..."
+- Do NOT offer multiple options
+- Do NOT explain the diagnostic process
+- Do NOT ask about their device/phone/computer
+- Do NOT make up steps not in [NEXT STEP]
 
-VOICE STYLE:
-- Warm and patient
-- Concise (1-2 sentences)
-- Wait for user confirmation
+=== IF NO [NEXT STEP] PROVIDED ===
+Say only: "Hello! I'm Akili. I'll help you fix your router. Are you ready to start?"
 
-If no [NEXT STEP] is provided, introduce yourself: "Hello! I'm Akili, your router troubleshooting assistant. Are you ready to begin diagnosing your internet connection?"`;
+Then WAIT for response.`;
+
+// Router-specific context to append when vendor is identified
+export const ROUTER_CONTEXT: Record<string, string> = {
+  'tplink_4g': `
+=== ROUTER IDENTIFIED: TP-Link Archer MR600 ===
+- Model: 4G LTE Router (uses SIM card, not cable internet)
+- LED lights are WHITE when active (not green)
+- Access page: tplinkmodem.net or 192.168.1.1
+- Login: Single password field (no username)
+- Reset button: Small pinhole on the back panel
+- SIM slot: On the side of the router`,
+  
+  'tplink': `
+=== ROUTER IDENTIFIED: TP-Link ===
+- LED lights may be green or white depending on model
+- Access page: tplinkwifi.net or 192.168.0.1
+- Login: Usually admin/admin or check sticker
+- Reset button: Small pinhole on the back`,
+  
+  'netgear': `
+=== ROUTER IDENTIFIED: NETGEAR ===
+- LED lights are typically green/amber
+- Access page: routerlogin.net or 192.168.1.1
+- Login: Usually admin/password
+- Reset button: Recessed on back panel`,
+  
+  'dlink': `
+=== ROUTER IDENTIFIED: D-Link ===
+- LED lights are typically green/orange
+- Access page: 192.168.0.1
+- Login: Usually admin with blank password
+- Reset button: Recessed on back panel`,
+  
+  'asus': `
+=== ROUTER IDENTIFIED: ASUS ===
+- LED lights are typically white
+- Access page: 192.168.1.1 or router.asus.com
+- Login: Usually admin/admin
+- Reset button: Recessed on back panel`,
+  
+  'generic': `
+=== ROUTER: Unknown Brand ===
+- Check sticker on router for default gateway and login
+- Common addresses: 192.168.1.1, 192.168.0.1
+- Common logins: admin/admin, admin/password`,
+};
+
+// Generate full system prompt with router context
+export function getSystemPrompt(vendorId?: string): string {
+  let prompt = AKILI_SYSTEM_PROMPT_BASE;
+  
+  if (vendorId && ROUTER_CONTEXT[vendorId]) {
+    prompt += '\n' + ROUTER_CONTEXT[vendorId];
+  }
+  
+  return prompt;
+}
+
+// Legacy export for backward compatibility
+export const AKILI_SYSTEM_PROMPT = AKILI_SYSTEM_PROMPT_BASE + ROUTER_CONTEXT['tplink_4g'];
 
 // LED status descriptions for voice
 export const LED_DESCRIPTIONS = {

@@ -16,6 +16,7 @@ import {
 } from './types';
 import { DIAGNOSTIC_NODES, getNodeById } from './nodes';
 import { getAssetsForNode } from './assets';
+import { VENDOR_PROFILES, getSystemPrompt, ROUTER_CONTEXT } from './constants';
 
 // Generate unique session ID
 function generateSessionId(): string {
@@ -116,6 +117,34 @@ export function processResponse(
   };
 }
 
+// Detect vendor from user response
+function detectVendor(response: string): string | null {
+  const normalizedResponse = response.toLowerCase().trim();
+  
+  // TP-Link detection (prioritize 4G/MR600 for now)
+  if (normalizedResponse.includes('tp-link') || 
+      normalizedResponse.includes('tplink') || 
+      normalizedResponse.includes('tp link') ||
+      normalizedResponse.includes('mr600') ||
+      normalizedResponse.includes('archer')) {
+    return 'tplink_4g'; // Default to MR600 for demo
+  }
+  
+  if (normalizedResponse.includes('netgear')) {
+    return 'netgear';
+  }
+  
+  if (normalizedResponse.includes('d-link') || normalizedResponse.includes('dlink')) {
+    return 'dlink';
+  }
+  
+  if (normalizedResponse.includes('asus')) {
+    return 'asus';
+  }
+  
+  return null;
+}
+
 // Advance session to next node
 export function advanceSession(
   session: DiagnosticSession,
@@ -137,6 +166,19 @@ export function advanceSession(
       [session.current_node_id]: response,
     },
   };
+
+  // Detect vendor when at router identification node
+  if (session.current_node_id === 'entry_router_identify' && !newSession.vendor_profile) {
+    const vendorId = detectVendor(response);
+    if (vendorId && VENDOR_PROFILES[vendorId]) {
+      newSession.vendor_profile = VENDOR_PROFILES[vendorId];
+      console.log(`[PathRAG] Vendor detected: ${VENDOR_PROFILES[vendorId].name}`);
+    } else {
+      // Default to generic if not recognized
+      newSession.vendor_profile = VENDOR_PROFILES['generic'];
+      console.log('[PathRAG] Using generic vendor profile');
+    }
+  }
 
   if (result.should_escalate) {
     newSession.status = 'escalated';
@@ -356,36 +398,43 @@ export function generateVoiceContext(session: DiagnosticSession): string {
   const expectedKeys = Object.keys(node.expected_answers);
   const phase = PHASE_LABELS[node.phase] || node.phase;
 
+  // Get router-specific context
+  const vendorId = session.vendor_profile?.vendor_id;
+  const routerContext = vendorId && ROUTER_CONTEXT[vendorId] ? ROUTER_CONTEXT[vendorId] : '';
+
   // Build a clear, structured context for Akili
   let context = `
 NODE_ID: ${node.node_id}
 PHASE: ${phase}
+${routerContext}
 
 YOUR TASK: ${node.voice_instruction}
 
-WHAT TO LISTEN FOR:
-${expectedKeys.map(key => `- "${key}" or similar`).join('\n')}
+VALID RESPONSES: ${expectedKeys.slice(0, 5).join(', ')}
 
-RULES FOR THIS STEP:
-- Speak the instruction above naturally
-- Wait for user to respond
-- If they say something like "${expectedKeys[0]}", that's a valid answer
-- If they seem confused, rephrase the instruction more simply
-- Do NOT move to the next step until they confirm
+RULES:
+- Say the instruction above naturally
+- ONE sentence, then STOP
+- Wait for user response
 `;
 
-  // Add observation history if we have any
-  const observationCount = Object.keys(session.observations).length;
-  if (observationCount > 0) {
-    context += `\nPREVIOUS OBSERVATIONS:\n`;
-    for (const [nodeId, observation] of Object.entries(session.observations)) {
-      context += `- ${nodeId}: "${observation}"\n`;
+  // Add router-specific LED info if we're checking LEDs
+  if (node.node_id.includes('led') || node.node_id.includes('power') || node.node_id.includes('internet')) {
+    if (vendorId === 'tplink_4g') {
+      context += `\nNOTE: MR600 LEDs are WHITE when active, not green.\n`;
     }
   }
 
-  // Add escalation guidance if applicable
-  if (node.escalation_conditions.user_uncertain) {
-    context += `\nIF USER IS CONFUSED: Reassure them and rephrase. If still stuck, you can escalate.\n`;
+  // Add gateway info if we're checking browser access
+  if (node.node_id.includes('browser') || node.node_id.includes('login') || node.node_id.includes('gateway')) {
+    const profile = session.vendor_profile;
+    if (profile) {
+      context += `\nROUTER ACCESS: ${profile.default_gateway}`;
+      if (profile.alt_gateway) {
+        context += ` or ${profile.alt_gateway}`;
+      }
+      context += '\n';
+    }
   }
 
   return context.trim();
