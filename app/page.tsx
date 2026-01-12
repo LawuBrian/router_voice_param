@@ -74,7 +74,7 @@ export default function Home() {
     }
   }, []);
 
-  // Process user response through PathRAG
+  // Process user response through PathRAG - ALWAYS returns next instruction
   const processResponse = useCallback(async (response: string): Promise<string | null> => {
     if (!sessionId) return null;
     
@@ -106,8 +106,14 @@ export default function Home() {
       
       if (nodeChanged) {
         lastNodeIdRef.current = newNodeId;
-        // Return the new instruction to speak
-        return data.current_node?.voice_instruction || null;
+      }
+      
+      // ALWAYS return the current node instruction
+      // PathRAG determines the next step, AI just speaks it
+      const instruction = data.current_node?.voice_instruction;
+      if (instruction) {
+        console.log('[PathRAG] Next instruction:', instruction.substring(0, 50));
+        return instruction;
       }
       
       return null;
@@ -117,25 +123,77 @@ export default function Home() {
     }
   }, [sessionId]);
 
-  // Handle WebRTC messages
+  // Track if we're processing to prevent duplicates
+  const isProcessingRef = useRef(false);
+  const lastProcessedRef = useRef<string>('');
+
+  // Handle WebRTC messages and function calls
   useEffect(() => {
     const handleMessage = async (msg: WebRTCMessage) => {
       if (msg.type === 'transcript' && msg.content) {
-        // Add to transcript
-        setTranscript(prev => [...prev, {
-          role: msg.role || 'user',
-          text: msg.content!,
-          timestamp: msg.timestamp,
-          node_id: currentNode?.node_id,
-        }]);
+        const content = msg.content.trim();
+        
+        // Filter out empty, very short, or noise transcripts
+        if (!content || content.length < 2) {
+          console.log('[Page] Ignoring empty/short transcript');
+          return;
+        }
+        
+        // Filter out common noise patterns
+        const noisePatterns = ['okay', 'ok', 'bye', 'um', 'uh', 'hmm', 'ah'];
+        if (msg.role === 'user' && noisePatterns.includes(content.toLowerCase())) {
+          // Only filter if it's very short and doesn't seem intentional
+          if (content.length <= 3) {
+            console.log('[Page] Ignoring likely noise:', content);
+            return;
+          }
+        }
 
-        // If it's a user message, process through PathRAG
-        if (msg.role === 'user') {
-          const nextInstruction = await processResponse(msg.content);
+        // Add to transcript (for model messages always, for user only if meaningful)
+        if (msg.role === 'model') {
+          setTranscript(prev => [...prev, {
+            role: 'model',
+            text: content,
+            timestamp: msg.timestamp,
+            node_id: currentNode?.node_id,
+          }]);
+        } else if (msg.role === 'user') {
+          // Prevent duplicate processing of same content
+          if (content === lastProcessedRef.current) {
+            console.log('[Page] Ignoring duplicate:', content);
+            return;
+          }
           
-          // If node changed, update the AI's context with new instruction
-          if (nextInstruction) {
-            webrtcService.updateContext(nextInstruction);
+          // Prevent concurrent processing
+          if (isProcessingRef.current) {
+            console.log('[Page] Already processing, skipping:', content);
+            return;
+          }
+          
+          isProcessingRef.current = true;
+          lastProcessedRef.current = content;
+          
+          // Add user message to transcript
+          setTranscript(prev => [...prev, {
+            role: 'user',
+            text: content,
+            timestamp: msg.timestamp,
+            node_id: currentNode?.node_id,
+          }]);
+
+          // Process through PathRAG
+          try {
+            const nextInstruction = await processResponse(content);
+            
+            // If we have a next instruction, update the AI's context
+            if (nextInstruction) {
+              webrtcService.updateContext(nextInstruction);
+            }
+          } finally {
+            // Reset processing flag after a delay to debounce
+            setTimeout(() => {
+              isProcessingRef.current = false;
+            }, 1000);
           }
         }
       } else if (msg.type === 'speech_started') {
@@ -147,12 +205,37 @@ export default function Home() {
       }
     };
 
+    // Handle function calls from the AI
+    const handleFunctionCall = (name: string, args: Record<string, unknown>) => {
+      console.log('[Page] AI called function:', name, args);
+      
+      switch (name) {
+        case 'step_complete':
+          // AI finished speaking the step, acknowledge and wait
+          console.log('[Page] Step complete, AI spoke:', args.spoken_text);
+          webrtcService.sendFunctionResult('OK');
+          break;
+          
+        case 'clarify_step':
+          // AI provided clarification
+          console.log('[Page] AI clarified:', args.clarification);
+          webrtcService.sendFunctionResult('OK');
+          break;
+          
+        default:
+          console.log('[Page] Unknown function:', name);
+          webrtcService.sendFunctionResult('OK');
+      }
+    };
+
     const unsubConnection = webrtcService.onConnectionChange(setIsConnected);
     const unsubMessage = webrtcService.onMessage(handleMessage);
+    const unsubFunctionCall = webrtcService.onFunctionCall(handleFunctionCall);
 
     return () => {
       unsubConnection();
       unsubMessage();
+      unsubFunctionCall();
     };
   }, [processResponse, currentNode]);
 
@@ -201,6 +284,15 @@ export default function Home() {
 
   // Handle quick response from diagnostic panel (button clicks)
   const handleQuickResponse = async (response: string) => {
+    // Prevent concurrent processing
+    if (isProcessingRef.current) {
+      console.log('[Page] Already processing, button click ignored');
+      return;
+    }
+    
+    isProcessingRef.current = true;
+    lastProcessedRef.current = response;
+    
     // Add to transcript
     setTranscript(prev => [...prev, {
       role: 'user',
@@ -209,12 +301,19 @@ export default function Home() {
       node_id: currentNode?.node_id,
     }]);
     
-    // Process through PathRAG
-    const nextInstruction = await processResponse(response);
-    
-    // If node changed, update the AI's context
-    if (nextInstruction && isConnected) {
-      webrtcService.updateContext(nextInstruction);
+    try {
+      // Process through PathRAG
+      const nextInstruction = await processResponse(response);
+      
+      // If node changed, update the AI's context
+      if (nextInstruction && isConnected) {
+        webrtcService.updateContext(nextInstruction);
+      }
+    } finally {
+      // Reset processing flag after delay
+      setTimeout(() => {
+        isProcessingRef.current = false;
+      }, 1000);
     }
   };
 
@@ -415,7 +514,7 @@ export default function Home() {
             Akili • Voice Router Diagnosis System
           </p>
           <p className="text-[10px] text-pathrag-text-muted">
-            Powered by Azure GPT Realtime
+            Akili Voice Engine
           </p>
         </div>
       </footer>

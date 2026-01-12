@@ -1,6 +1,6 @@
 // ============================================
 // WebRTC Service for Azure GPT Realtime Voice
-// CONTROLLED ORCHESTRATION - Manual turn management
+// FUNCTION CALLING - Solid workflow control
 // ============================================
 
 import { WebRTCMessage } from './types';
@@ -9,6 +9,9 @@ export interface NegotiateResult {
   sdp?: string;
   error?: string;
 }
+
+// Function call handler type
+type FunctionCallHandler = (name: string, args: Record<string, unknown>) => void;
 
 const isBrowser = typeof window !== 'undefined';
 
@@ -19,9 +22,11 @@ class WebRTCService {
   private localStream: MediaStream | null = null;
   private connectionHandlers: ((connected: boolean) => void)[] = [];
   private messageHandlers: ((message: WebRTCMessage) => void)[] = [];
+  private functionCallHandlers: FunctionCallHandler[] = [];
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private isProcessing: boolean = false;
+  private currentCallId: string | null = null;
 
   async connect(voice: string = 'verse', initialInstruction: string = ''): Promise<void> {
     if (!isBrowser) {
@@ -112,21 +117,45 @@ class WebRTCService {
           break;
           
         case 'response.audio_transcript.done':
-          this.notifyMessageHandlers({
-            type: 'transcript',
-            role: 'model',
-            content: data.transcript,
-            timestamp: Date.now(),
-          });
+          // Filter out empty AI responses
+          const aiTranscript = (data.transcript || '').trim();
+          if (aiTranscript.length > 0) {
+            console.log('[WebRTC] AI said:', aiTranscript);
+            this.notifyMessageHandlers({
+              type: 'transcript',
+              role: 'model',
+              content: aiTranscript,
+              timestamp: Date.now(),
+            });
+          }
           break;
           
         case 'conversation.item.input_audio_transcription.completed':
-          this.notifyMessageHandlers({
-            type: 'transcript',
-            role: 'user',
-            content: data.transcript,
-            timestamp: Date.now(),
-          });
+          // Filter out empty or whitespace-only transcripts
+          const userTranscript = (data.transcript || '').trim();
+          if (userTranscript.length > 0) {
+            console.log('[WebRTC] User said:', userTranscript);
+            this.notifyMessageHandlers({
+              type: 'transcript',
+              role: 'user',
+              content: userTranscript,
+              timestamp: Date.now(),
+            });
+          } else {
+            console.log('[WebRTC] Ignoring empty user transcript');
+          }
+          break;
+        
+        // Handle function calls from the AI
+        case 'response.function_call_arguments.done':
+          console.log('[WebRTC] Function call:', data.name, data.arguments);
+          this.currentCallId = data.call_id;
+          try {
+            const args = JSON.parse(data.arguments || '{}');
+            this.notifyFunctionCallHandlers(data.name, args);
+          } catch (e) {
+            console.error('[WebRTC] Error parsing function args:', e);
+          }
           break;
           
         case 'error':
@@ -135,11 +164,42 @@ class WebRTCService {
           break;
           
         default:
+          // Log other events for debugging
+          if (data.type?.includes('function')) {
+            console.log('[WebRTC] Function event:', data.type);
+          }
           break;
       }
     } catch (error) {
       console.error('[WebRTC] Error parsing message:', error);
     }
+  }
+
+  // Send function result back to the AI
+  sendFunctionResult(result: string): void {
+    if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
+      console.log('[WebRTC] Data channel not ready for function result');
+      return;
+    }
+
+    if (!this.currentCallId) {
+      console.log('[WebRTC] No current call ID for function result');
+      return;
+    }
+
+    // Send the function output
+    const outputMessage = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'function_call_output',
+        call_id: this.currentCallId,
+        output: result
+      }
+    };
+    this.dataChannel.send(JSON.stringify(outputMessage));
+    console.log('[WebRTC] Sent function result:', result);
+
+    this.currentCallId = null;
   }
 
   private async negotiateSdp(voice: string, sdp: string, initialInstruction: string): Promise<NegotiateResult> {
@@ -163,7 +223,7 @@ class WebRTCService {
     }
   }
 
-  // Trigger the AI to respond (for initial greeting)
+  // Trigger the AI to respond
   triggerResponse(): void {
     if (this.dataChannel?.readyState !== 'open') {
       console.log('[WebRTC] Data channel not ready');
@@ -180,31 +240,64 @@ class WebRTCService {
     console.log('[WebRTC] Triggered response');
   }
 
-  // Update the AI's context with new PathRAG node instruction
+  // Update AI context with PathRAG node instruction and trigger response
   updateContext(nodeInstruction: string): void {
     if (this.dataChannel?.readyState !== 'open') {
       console.log('[WebRTC] Data channel not ready');
       return;
     }
     
-    // Update session instructions with the new node context
+    // Cancel any in-progress response first
+    if (this.isProcessing) {
+      console.log('[WebRTC] Canceling previous response');
+      try {
+        this.dataChannel.send(JSON.stringify({ type: 'response.cancel' }));
+      } catch (e) {
+        // Ignore cancel errors
+      }
+      // Small delay after cancel
+      setTimeout(() => this.sendInstruction(nodeInstruction), 200);
+      return;
+    }
+    
+    this.sendInstruction(nodeInstruction);
+  }
+
+  private sendInstruction(nodeInstruction: string): void {
+    if (!this.dataChannel || this.dataChannel.readyState !== 'open') return;
+    
+    this.isProcessing = true;
+    
+    // Update session with STRICT script-reading instructions
     const updateMessage = {
       type: 'session.update',
       session: {
-        instructions: `You are Akili, a router troubleshooting assistant.
+        instructions: `You are Akili. Read this script aloud, then STOP and WAIT.
 
-YOUR NEXT INSTRUCTION TO SPEAK:
+=== SCRIPT TO READ ===
 "${nodeInstruction}"
 
-RULES:
-- Speak the instruction above naturally
-- Keep it short (1-2 sentences)
-- Wait for user to respond
-- Do NOT add extra commentary`
+=== RULES ===
+- Say ONLY the script above (you can rephrase slightly)
+- Do NOT add your own advice or diagnosis
+- Do NOT suggest solutions
+- Do NOT ask extra questions
+- ENGLISH ONLY
+- After speaking, call step_complete() and WAIT silently`,
+        temperature: 0.6,  // Azure minimum
+        max_response_output_tokens: 300
       }
     };
     this.dataChannel.send(JSON.stringify(updateMessage));
-    console.log('[WebRTC] Updated context:', nodeInstruction);
+    console.log('[WebRTC] Updated instruction:', nodeInstruction.substring(0, 50));
+    
+    // Trigger response after update processes
+    setTimeout(() => {
+      if (this.dataChannel?.readyState === 'open') {
+        this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
+        console.log('[WebRTC] Triggered response');
+      }
+    }, 150);
   }
 
   disconnect(): void {
@@ -241,6 +334,7 @@ RULES:
     
     this.analyser = null;
     this.isProcessing = false;
+    this.currentCallId = null;
   }
 
   onConnectionChange(handler: (connected: boolean) => void): () => void {
@@ -257,12 +351,24 @@ RULES:
     };
   }
 
+  // Subscribe to function calls from the AI
+  onFunctionCall(handler: FunctionCallHandler): () => void {
+    this.functionCallHandlers.push(handler);
+    return () => {
+      this.functionCallHandlers = this.functionCallHandlers.filter(h => h !== handler);
+    };
+  }
+
   private notifyConnectionHandlers(connected: boolean): void {
     this.connectionHandlers.forEach(handler => handler(connected));
   }
 
   private notifyMessageHandlers(message: WebRTCMessage): void {
     this.messageHandlers.forEach(handler => handler(message));
+  }
+
+  private notifyFunctionCallHandlers(name: string, args: Record<string, unknown>): void {
+    this.functionCallHandlers.forEach(handler => handler(name, args));
   }
 
   getAnalyser(): AnalyserNode | null {

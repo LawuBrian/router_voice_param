@@ -23,7 +23,14 @@ export default function AssetViewer({ assets, nodeId }: AssetViewerProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
 
-  if (assets.length === 0) {
+  // Reset selectedIndex when assets change and index is out of bounds
+  React.useEffect(() => {
+    if (selectedIndex >= assets.length) {
+      setSelectedIndex(0);
+    }
+  }, [assets, selectedIndex]);
+
+  if (!assets || assets.length === 0) {
     return (
       <div className="bg-pathrag-surface border border-pathrag-border rounded-xl p-6 flex flex-col items-center justify-center min-h-[200px]">
         <div className="w-12 h-12 rounded-xl bg-pathrag-surface-alt flex items-center justify-center mb-3">
@@ -34,7 +41,21 @@ export default function AssetViewer({ assets, nodeId }: AssetViewerProps) {
     );
   }
 
-  const currentAsset = assets[selectedIndex];
+  // Ensure we have a valid index
+  const safeIndex = Math.min(selectedIndex, assets.length - 1);
+  const currentAsset = assets[safeIndex];
+
+  // Guard against undefined asset
+  if (!currentAsset) {
+    return (
+      <div className="bg-pathrag-surface border border-pathrag-border rounded-xl p-6 flex flex-col items-center justify-center min-h-[200px]">
+        <div className="w-12 h-12 rounded-xl bg-pathrag-surface-alt flex items-center justify-center mb-3">
+          <ImageIcon className="w-6 h-6 text-pathrag-text-muted" />
+        </div>
+        <p className="text-sm text-pathrag-text-muted">Loading visual guide...</p>
+      </div>
+    );
+  }
 
   const handlePrevious = () => {
     setSelectedIndex((prev) => (prev > 0 ? prev - 1 : assets.length - 1));
@@ -73,9 +94,9 @@ export default function AssetViewer({ assets, nodeId }: AssetViewerProps) {
       <div className="relative aspect-video bg-pathrag-bg">
         <AnimatePresence mode="wait">
           <motion.img
-            key={currentAsset.asset_id}
-            src={currentAsset.url}
-            alt={currentAsset.alt_text}
+            key={currentAsset.asset_id || 'asset'}
+            src={currentAsset.url || getPlaceholderSvg(currentAsset.alt_text || 'Router guide')}
+            alt={currentAsset.alt_text || 'Router guide'}
             className="w-full h-full object-contain p-4"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -159,11 +180,11 @@ export default function AssetViewer({ assets, nodeId }: AssetViewerProps) {
                 `}
               >
                 <img
-                  src={asset.url}
-                  alt={asset.alt_text}
+                  src={asset.url || getPlaceholderSvg(asset.alt_text || 'Guide')}
+                  alt={asset.alt_text || 'Guide'}
                   className="w-full h-full object-cover"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = getPlaceholderSvg(asset.alt_text);
+                    (e.target as HTMLImageElement).src = getPlaceholderSvg(asset.alt_text || 'Guide');
                   }}
                 />
               </button>
@@ -190,11 +211,11 @@ export default function AssetViewer({ assets, nodeId }: AssetViewerProps) {
               onClick={(e) => e.stopPropagation()}
             >
               <img
-                src={currentAsset.url}
-                alt={currentAsset.alt_text}
+                src={currentAsset.url || getPlaceholderSvg(currentAsset.alt_text || 'Guide')}
+                alt={currentAsset.alt_text || 'Guide'}
                 className="w-full h-full object-contain"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = getPlaceholderSvg(currentAsset.alt_text);
+                  (e.target as HTMLImageElement).src = getPlaceholderSvg(currentAsset.alt_text || 'Guide');
                 }}
               />
               <button
@@ -204,7 +225,7 @@ export default function AssetViewer({ assets, nodeId }: AssetViewerProps) {
                 <X className="w-5 h-5 text-pathrag-text" />
               </button>
               <div className="absolute bottom-4 left-4 right-4 p-3 bg-pathrag-surface/80 backdrop-blur-sm rounded-lg border border-pathrag-border">
-                <p className="text-sm text-pathrag-text">{currentAsset.alt_text}</p>
+                <p className="text-sm text-pathrag-text">{currentAsset.alt_text || 'Router guide'}</p>
               </div>
             </motion.div>
           </motion.div>

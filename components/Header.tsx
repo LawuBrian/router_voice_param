@@ -44,7 +44,7 @@ export default function Header() {
           <div className="h-4 w-px bg-pathrag-border" />
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-pathrag-accent" />
-            <span className="text-xs text-pathrag-text-muted">Azure GPT Realtime</span>
+            <span className="text-xs text-pathrag-text-muted">Akili Voice Engine</span>
           </div>
         </div>
 

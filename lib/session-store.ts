@@ -38,8 +38,14 @@ export async function saveSession(session: DiagnosticSession): Promise<void> {
   const key = `${KEY_PREFIX}${session.session_id}`;
   
   if (redis) {
-    // Save to Redis with TTL
-    await redis.set(key, JSON.stringify(session), { ex: SESSION_TTL });
+    try {
+      // Save to Redis with TTL
+      await redis.set(key, JSON.stringify(session), { ex: SESSION_TTL });
+    } catch (error) {
+      console.error('[SessionStore] Redis save failed, using memory fallback:', error);
+      // Fallback to in-memory
+      memoryStore.set(session.session_id, session);
+    }
   } else {
     // Save to in-memory
     memoryStore.set(session.session_id, session);
@@ -53,14 +59,23 @@ export async function getSession(sessionId: string): Promise<DiagnosticSession |
   const key = `${KEY_PREFIX}${sessionId}`;
   
   if (redis) {
-    const data = await redis.get<string>(key);
-    if (!data) return null;
-    
-    // Handle both string and object responses from Upstash
-    if (typeof data === 'string') {
-      return JSON.parse(data) as DiagnosticSession;
+    try {
+      const data = await redis.get<string>(key);
+      if (!data) {
+        // Check memory fallback
+        return memoryStore.get(sessionId) || null;
+      }
+      
+      // Handle both string and object responses from Upstash
+      if (typeof data === 'string') {
+        return JSON.parse(data) as DiagnosticSession;
+      }
+      return data as unknown as DiagnosticSession;
+    } catch (error) {
+      console.error('[SessionStore] Redis get failed, checking memory:', error);
+      // Fallback to in-memory
+      return memoryStore.get(sessionId) || null;
     }
-    return data as unknown as DiagnosticSession;
   } else {
     return memoryStore.get(sessionId) || null;
   }
@@ -72,10 +87,15 @@ export async function getSession(sessionId: string): Promise<DiagnosticSession |
 export async function deleteSession(sessionId: string): Promise<void> {
   const key = `${KEY_PREFIX}${sessionId}`;
   
+  // Always clean memory store
+  memoryStore.delete(sessionId);
+  
   if (redis) {
-    await redis.del(key);
-  } else {
-    memoryStore.delete(sessionId);
+    try {
+      await redis.del(key);
+    } catch (error) {
+      console.error('[SessionStore] Redis delete failed:', error);
+    }
   }
 }
 
@@ -84,8 +104,12 @@ export async function deleteSession(sessionId: string): Promise<void> {
  */
 export async function touchSession(sessionId: string): Promise<void> {
   if (redis) {
-    const key = `${KEY_PREFIX}${sessionId}`;
-    await redis.expire(key, SESSION_TTL);
+    try {
+      const key = `${KEY_PREFIX}${sessionId}`;
+      await redis.expire(key, SESSION_TTL);
+    } catch (error) {
+      console.error('[SessionStore] Redis touch failed:', error);
+    }
   }
   // In-memory doesn't need TTL management
 }

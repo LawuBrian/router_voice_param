@@ -44,9 +44,9 @@ export default function Transcript({ entries }: TranscriptProps) {
     <div className="h-full flex flex-col overflow-hidden">
       {/* Recent messages - always visible, newest at top */}
       <div className="flex-shrink-0 p-4 space-y-4">
-        <AnimatePresence initial={false}>
-          {recentEntries.map((entry, index) => (
-            <TranscriptMessage key={`${entry.timestamp}-${index}`} entry={entry} />
+        <AnimatePresence initial={false} mode="popLayout">
+          {recentEntries.map((entry) => (
+            <TranscriptMessage key={`msg-${entry.timestamp}-${entry.role}`} entry={entry} />
           ))}
         </AnimatePresence>
       </div>
@@ -84,9 +84,9 @@ export default function Transcript({ entries }: TranscriptProps) {
             className="flex-1 overflow-hidden"
           >
             <div className="h-full max-h-64 overflow-y-auto p-4 space-y-4 border-t border-pathrag-border bg-pathrag-bg/50 scrollbar-thin scrollbar-thumb-pathrag-border scrollbar-track-transparent">
-              {oldEntries.map((entry, index) => (
+              {oldEntries.map((entry) => (
                 <TranscriptMessage 
-                  key={`old-${entry.timestamp}-${index}`} 
+                  key={`old-${entry.timestamp}-${entry.role}`} 
                   entry={entry} 
                   isOld 
                 />
@@ -103,10 +103,14 @@ export default function Transcript({ entries }: TranscriptProps) {
 function TranscriptMessage({ entry, isOld = false }: { entry: TranscriptEntry; isOld?: boolean }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: isOld ? 0.7 : 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
+      layout
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: isOld ? 0.7 : 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ 
+        duration: 0.15,
+        layout: { duration: 0.2 }
+      }}
       className={`flex gap-3 ${entry.role === 'user' ? 'flex-row-reverse' : ''}`}
     >
       {/* Avatar */}

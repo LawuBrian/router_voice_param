@@ -227,15 +227,37 @@ function shouldEscalate(
   
   // User expresses uncertainty
   if (escalation_conditions.user_uncertain) {
-    const uncertainPhrases = ['not sure', "don't know", 'confused', "can't tell", 'help', 'unsure', "i don't see"];
+    const uncertainPhrases = [
+      'not sure', "don't know", "dont know", 'confused', "can't tell", "cant tell",
+      'help', 'unsure', "i don't see", "i dont see", "no idea",
+      "i have no clue", "what does that mean", "i'm lost", "im lost"
+    ];
     if (uncertainPhrases.some(phrase => response.includes(phrase))) {
+      return true;
+    }
+  }
+
+  // User cannot locate something
+  if (escalation_conditions.user_uncertain || escalation_conditions.screen_mismatch) {
+    const cannotFindPhrases = [
+      "can't find", "cant find", "cannot find", "can't locate", "cant locate",
+      "don't see it", "dont see it", "can't see", "cant see", "where is",
+      "i don't see any", "i dont see any", "not there", "nothing there",
+      "can't see any", "cant see any"
+    ];
+    if (cannotFindPhrases.some(phrase => response.includes(phrase))) {
       return true;
     }
   }
 
   // Screen mismatch
   if (escalation_conditions.screen_mismatch) {
-    const mismatchPhrases = ["doesn't match", 'different', 'not the same', "don't see that", 'looks different'];
+    const mismatchPhrases = [
+      "doesn't match", "doesnt match", 'different', 'not the same',
+      "don't see that", "dont see that", 'looks different', 'not what i see',
+      "my screen looks different", "that's not what i have", "thats not what i have",
+      "mine looks different", "wrong screen", "different page"
+    ];
     if (mismatchPhrases.some(phrase => response.includes(phrase))) {
       return true;
     }
@@ -259,11 +281,25 @@ function getEscalationReason(
   response: string,
   session: DiagnosticSession
 ): string {
-  const uncertainPhrases = ['not sure', "don't know", 'confused', "can't tell", 'help', 'unsure'];
-  const mismatchPhrases = ["doesn't match", 'different', 'not the same', "don't see that"];
+  const uncertainPhrases = [
+    'not sure', "don't know", "dont know", 'confused', "can't tell",
+    'help', 'unsure', "no idea", "i'm lost", "im lost"
+  ];
+  const cannotFindPhrases = [
+    "can't find", "cant find", "cannot find", "can't locate", "cant locate",
+    "don't see it", "dont see it", "can't see", "cant see"
+  ];
+  const mismatchPhrases = [
+    "doesn't match", "doesnt match", 'different', 'not the same',
+    "don't see that", "looks different", "not what i see"
+  ];
 
   if (uncertainPhrases.some(phrase => response.includes(phrase))) {
     return 'User expressed uncertainty';
+  }
+  
+  if (cannotFindPhrases.some(phrase => response.includes(phrase))) {
+    return 'User cannot locate required element';
   }
   
   if (mismatchPhrases.some(phrase => response.includes(phrase))) {
@@ -314,15 +350,27 @@ function findMatchingAnswer(node: DiagnosticNode, response: string): string | nu
 // Get variants for answer matching
 function getAnswerVariants(answerKey: string): string[] {
   const variantMap: Record<string, string[]> = {
-    'green': ['green', 'solid green', 'steady green'],
+    // LED states
+    'green': ['green', 'solid green', 'steady green', 'lit', 'lit up'],
+    'white': ['white', 'solid white', 'lit', 'lit up'],
+    'on': ['on', 'lit', 'lit up', 'solid', 'steady'],
     'red': ['red', 'solid red', 'steady red'],
-    'orange': ['orange', 'amber', 'solid orange', 'solid amber'],
-    'blinking': ['blinking', 'flashing', 'flickering'],
-    'off': ['off', 'no light', 'dark', 'not lit'],
-    'connected': ['connected', 'online', 'working'],
+    'orange': ['orange', 'amber', 'yellow', 'solid orange', 'solid amber'],
+    'blinking': ['blinking', 'flashing', 'flickering', 'intermittent'],
+    'off': ['off', 'no light', 'dark', 'not lit', 'nothing', 'no'],
+    // Connection states
+    'connected': ['connected', 'online', 'working', 'up'],
     'disconnected': ['disconnected', 'offline', 'not working', 'down'],
-    'yes': ['yes', 'yeah', 'yep', 'correct', 'right', 'ok', 'okay', 'confirmed', 'done', 'i see it'],
-    'no': ['no', 'nope', "can't", 'wrong', 'not'],
+    // Confirmations - extended variants
+    'yes': [
+      'yes', 'yeah', 'yep', 'yup', 'correct', 'right', 'ok', 'okay', 'confirmed',
+      'done', 'i see it', 'got it', 'sure', 'absolutely', 'definitely',
+      "let's go", 'lets go', 'go ahead', 'ready', 'start', 'affirmative'
+    ],
+    'no': ['no', 'nope', "can't", 'wrong', 'not', 'negative', 'nah'],
+    // Action confirmations
+    'done': ['done', 'finished', 'completed', 'did it', 'yes'],
+    'plugged in': ['plugged in', 'connected', 'yes', 'it is'],
   };
 
   return variantMap[answerKey] || [answerKey];
