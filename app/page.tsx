@@ -23,7 +23,6 @@ import {
   MicOff, 
   Phone, 
   PhoneOff, 
-  Settings2, 
   RefreshCw,
   Volume2
 } from 'lucide-react';
@@ -71,9 +70,8 @@ export default function Home() {
     }
   }, []);
 
-  // Process user response through PathRAG
-  // skipVoiceTrigger = true when called from handleQuickResponse (to avoid duplicate triggers)
-  const processResponse = useCallback(async (response: string, skipVoiceTrigger = false) => {
+  // Process user response through PathRAG (just update state, don't trigger AI)
+  const processResponse = useCallback(async (response: string) => {
     if (!sessionId) return;
     
     try {
@@ -96,17 +94,14 @@ export default function Home() {
       setProgress(data.progress);
       setStatus(data.status);
       
-      // Advance AI to the new PathRAG node with updated context
-      // Only trigger if not skipped (voice transcript triggers this, quick response handles separately)
-      if (!skipVoiceTrigger && isConnected && data.voice_context && data.current_node?.voice_instruction) {
-        webrtcService.advanceToNode(data.voice_context, data.current_node.voice_instruction);
-      }
+      // NOTE: We do NOT manually trigger the AI to speak
+      // The AI responds naturally based on its conversation context
       
       return data;
     } catch (error) {
       console.error('Error processing response:', error);
     }
-  }, [sessionId, isConnected]);
+  }, [sessionId]);
 
   // Handle WebRTC messages
   useEffect(() => {
@@ -120,7 +115,7 @@ export default function Home() {
           node_id: currentNode?.node_id,
         }]);
 
-        // If it's a user message, process through PathRAG
+        // If it's a user message, process through PathRAG to update UI state
         if (msg.role === 'user') {
           await processResponse(msg.content);
         }
@@ -162,6 +157,8 @@ export default function Home() {
       setProgress(session.progress);
       
       // Connect voice with PathRAG context
+      // The system prompt includes the initial instruction
+      // The AI will start speaking automatically
       await webrtcService.connect(currentVoice, session.voice_context);
       
       // Add initial system message
@@ -171,13 +168,7 @@ export default function Home() {
         timestamp: Date.now(),
       }]);
       
-      // After connection is stable, trigger the initial greeting using PathRAG node
-      // This ensures the greeting comes from the entry_start node, not the system prompt
-      setTimeout(() => {
-        if (session.voice_context && session.current_node?.voice_instruction) {
-          webrtcService.advanceToNode(session.voice_context, session.current_node.voice_instruction);
-        }
-      }, 1000); // Wait for connection to stabilize
+      // NOTE: No manual trigger needed - AI starts automatically
       
     } catch (error) {
       console.error('Error starting session:', error);
@@ -209,13 +200,11 @@ export default function Home() {
       node_id: currentNode?.node_id,
     }]);
     
-    // Process through PathRAG (skip auto-trigger, we'll handle it)
-    const result = await processResponse(response, true);
+    // Process through PathRAG to update UI state
+    await processResponse(response);
     
-    // Advance AI to new node (single trigger point)
-    if (result?.current_node?.voice_instruction && result?.voice_context) {
-      webrtcService.advanceToNode(result.voice_context, result.current_node.voice_instruction);
-    }
+    // NOTE: The AI will respond naturally to the conversation
+    // We don't need to manually trigger it
   };
 
   // Restart session

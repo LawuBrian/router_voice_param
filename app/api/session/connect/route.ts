@@ -128,9 +128,10 @@ export async function POST(request: NextRequest) {
 function buildSystemPrompt(nodeContext: string): string {
   let prompt = AKILI_SYSTEM_PROMPT;
 
-  // Add PathRAG diagnostic node context
+  // Add PathRAG diagnostic node context if provided
   if (nodeContext) {
-    prompt += `\n\n=== CURRENT DIAGNOSTIC NODE (from PathRAG) ===\n${nodeContext}`;
+    prompt += `\n\n=== CURRENT DIAGNOSTIC STEP ===\n${nodeContext}`;
+    prompt += `\n\nIMPORTANT: Follow the diagnostic flow above. Ask the questions in order.`;
   }
 
   return prompt;

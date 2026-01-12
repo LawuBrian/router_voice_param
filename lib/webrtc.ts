@@ -1,6 +1,6 @@
 // ============================================
 // WebRTC Service for Azure GPT Realtime Voice
-// PathRAG Voice Communication Layer
+// SIMPLIFIED - Matches working param_demo pattern
 // ============================================
 
 import { WebRTCMessage } from './types';
@@ -22,13 +22,8 @@ class WebRTCService {
   private messageHandlers: ((message: WebRTCMessage) => void)[] = [];
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
-  private isResponseInProgress: boolean = false;
-  private isMicMuted: boolean = false;
-  private lastTriggerTime: number = 0;
-  private readonly TRIGGER_DEBOUNCE_MS = 2000; // Minimum 2 seconds between triggers
 
   async connect(voice: string = 'verse', nodeContext: string = ''): Promise<void> {
-    // Ensure we're in a browser environment
     if (!isBrowser) {
       throw new Error('WebRTC is only available in browser environment');
     }
@@ -38,23 +33,10 @@ class WebRTCService {
       return;
     }
 
-    // Check for mediaDevices support (requires secure context: HTTPS or localhost)
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      const isSecureContext = window.isSecureContext;
-      if (!isSecureContext) {
-        throw new Error('Microphone access requires a secure connection. Please access this app via https:// or http://localhost:3000');
-      }
-      throw new Error('Your browser does not support microphone access. Please use Chrome, Firefox, or Edge.');
-    }
-
     try {
       // Get microphone access
       this.localStream = await navigator.mediaDevices.getUserMedia({
-        audio: { 
-          echoCancellation: true, 
-          noiseSuppression: true,
-          autoGainControl: true,
-        }
+        audio: { echoCancellation: true, noiseSuppression: true }
       });
 
       // Create peer connection (no iceServers needed for Azure Realtime)
@@ -64,7 +46,7 @@ class WebRTCService {
       this.audioElement = document.createElement('audio');
       this.audioElement.autoplay = true;
 
-      // Handle incoming audio tracks (matches working param_demo)
+      // Handle incoming audio tracks
       this.peerConnection.ontrack = (event) => {
         if (event.streams.length > 0 && this.audioElement) {
           this.audioElement.srcObject = event.streams[0];
@@ -77,7 +59,18 @@ class WebRTCService {
 
       // Create data channel for events
       this.dataChannel = this.peerConnection.createDataChannel('oai-events');
-      this.setupDataChannel();
+
+      this.dataChannel.onopen = () => {
+        console.log('[WebRTC] Data channel opened');
+        this.notifyConnectionHandlers(true);
+        this.notifyMessageHandlers({ type: 'connected', timestamp: Date.now() });
+      };
+
+      this.dataChannel.onmessage = (event) => this.handleDataChannelMessage(event);
+
+      this.dataChannel.onerror = (error) => {
+        console.error('[WebRTC] Data channel error:', error);
+      };
 
       // Handle connection state changes
       this.peerConnection.onconnectionstatechange = () => {
@@ -93,7 +86,7 @@ class WebRTCService {
       const offer = await this.peerConnection.createOffer();
       await this.peerConnection.setLocalDescription(offer);
 
-      // Negotiate via backend
+      // Negotiate via backend - the system prompt and context are set here
       const result = await this.negotiateSdp(voice, offer.sdp!, nodeContext);
 
       if (result.error) {
@@ -106,6 +99,9 @@ class WebRTCService {
         sdp: result.sdp! 
       });
 
+      // NOTE: We do NOT manually trigger response.create
+      // The AI will start speaking automatically based on the system prompt
+
     } catch (error: unknown) {
       console.error('[WebRTC] Connection error:', error);
       this.cleanup();
@@ -113,52 +109,11 @@ class WebRTCService {
     }
   }
 
-  private setupDataChannel(): void {
-    if (!this.dataChannel) return;
-
-    this.dataChannel.onopen = () => {
-      console.log('[WebRTC] Data channel opened');
-      this.notifyConnectionHandlers(true);
-      this.notifyMessageHandlers({ type: 'connected', timestamp: Date.now() });
-    };
-
-    this.dataChannel.onclose = () => {
-      console.log('[WebRTC] Data channel closed');
-      this.notifyConnectionHandlers(false);
-    };
-
-    this.dataChannel.onmessage = (event) => this.handleDataChannelMessage(event);
-
-    this.dataChannel.onerror = (error) => {
-      console.error('[WebRTC] Data channel error:', error);
-    };
-  }
-
   private handleDataChannelMessage(event: MessageEvent): void {
     try {
       const data = JSON.parse(event.data);
       
       switch (data.type) {
-        // Response lifecycle - track to prevent overlapping responses
-        case 'response.created':
-          this.isResponseInProgress = true;
-          // Mute mic while AI is speaking to prevent echo
-          this.muteMic();
-          break;
-          
-        case 'response.done':
-          this.isResponseInProgress = false;
-          // Unmute mic after AI finishes speaking (small delay for audio to fully stop)
-          setTimeout(() => this.unmuteMic(), 300);
-          break;
-
-        // AI is outputting audio - ensure mic is muted
-        case 'response.audio.delta':
-          if (!this.isMicMuted) {
-            this.muteMic();
-          }
-          break;
-          
         // Model transcript (AI finished speaking a segment)
         case 'response.audio_transcript.done':
           this.notifyMessageHandlers({
@@ -181,8 +136,6 @@ class WebRTCService {
           
         // Error handling
         case 'error':
-          this.isResponseInProgress = false;
-          this.unmuteMic();
           this.notifyMessageHandlers({
             type: 'error',
             error: data.error?.message || 'An error occurred',
@@ -190,32 +143,12 @@ class WebRTCService {
           });
           break;
           
-        // Silently ignore other message types (don't log spam)
+        // Silently ignore other message types
         default:
           break;
       }
     } catch (error) {
       console.error('[WebRTC] Error parsing message:', error);
-    }
-  }
-
-  // Mute microphone to prevent echo during AI speech
-  private muteMic(): void {
-    if (this.localStream && !this.isMicMuted) {
-      this.localStream.getAudioTracks().forEach(track => {
-        track.enabled = false;
-      });
-      this.isMicMuted = true;
-    }
-  }
-
-  // Unmute microphone after AI finishes speaking
-  private unmuteMic(): void {
-    if (this.localStream && this.isMicMuted) {
-      this.localStream.getAudioTracks().forEach(track => {
-        track.enabled = true;
-      });
-      this.isMicMuted = false;
     }
   }
 
@@ -238,58 +171,6 @@ class WebRTCService {
       const errorMessage = error instanceof Error ? error.message : 'Network error';
       return { error: errorMessage };
     }
-  }
-
-  // Advance to a new PathRAG node - updates context AND triggers AI to speak
-  advanceToNode(nodeContext: string, voiceInstruction: string): void {
-    if (this.dataChannel?.readyState !== 'open') {
-      console.log('[WebRTC] Data channel not open, skipping advance');
-      return;
-    }
-
-    // Debounce protection - prevent rapid-fire triggers
-    const now = Date.now();
-    if (now - this.lastTriggerTime < this.TRIGGER_DEBOUNCE_MS) {
-      console.log('[WebRTC] Debounce: skipping trigger (too soon)');
-      return;
-    }
-    this.lastTriggerTime = now;
-
-    // 0. If response in progress, cancel it (ignore errors if none active)
-    if (this.isResponseInProgress) {
-      try {
-        this.dataChannel.send(JSON.stringify({ type: 'response.cancel' }));
-      } catch {
-        // Ignore cancel errors
-      }
-      this.isResponseInProgress = false;
-    }
-    
-    // 1. Update session instructions with new PathRAG context
-    const updateMessage = {
-      type: 'session.update',
-      session: {
-        instructions: nodeContext
-      }
-    };
-    this.dataChannel.send(JSON.stringify(updateMessage));
-    
-    // 2. Inject system message with exact instruction to speak
-    const systemMessage = {
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'system',
-        content: [{ 
-          type: 'input_text', 
-          text: `[NEXT STEP] Speak this instruction to the user: "${voiceInstruction}"`
-        }]
-      }
-    };
-    this.dataChannel.send(JSON.stringify(systemMessage));
-    
-    // 3. Trigger response
-    this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
   }
 
   disconnect(): void {
@@ -325,9 +206,6 @@ class WebRTCService {
     }
     
     this.analyser = null;
-    this.isResponseInProgress = false;
-    this.isMicMuted = false;
-    this.lastTriggerTime = 0;
   }
 
   // Event subscription methods
@@ -385,5 +263,5 @@ class WebRTCService {
   }
 }
 
-// Create singleton instance - safe for SSR as methods check for browser
+// Create singleton instance
 export const webrtcService = new WebRTCService();
