@@ -23,6 +23,9 @@ class WebRTCService {
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private isResponseInProgress: boolean = false;
+  private isMicMuted: boolean = false;
+  private lastTriggerTime: number = 0;
+  private readonly TRIGGER_DEBOUNCE_MS = 2000; // Minimum 2 seconds between triggers
 
   async connect(voice: string = 'verse', nodeContext: string = ''): Promise<void> {
     // Ensure we're in a browser environment
@@ -139,10 +142,21 @@ class WebRTCService {
         // Response lifecycle - track to prevent overlapping responses
         case 'response.created':
           this.isResponseInProgress = true;
+          // Mute mic while AI is speaking to prevent echo
+          this.muteMic();
           break;
           
         case 'response.done':
           this.isResponseInProgress = false;
+          // Unmute mic after AI finishes speaking (small delay for audio to fully stop)
+          setTimeout(() => this.unmuteMic(), 300);
+          break;
+
+        // AI is outputting audio - ensure mic is muted
+        case 'response.audio.delta':
+          if (!this.isMicMuted) {
+            this.muteMic();
+          }
           break;
           
         // Model transcript (AI finished speaking a segment)
@@ -168,6 +182,7 @@ class WebRTCService {
         // Error handling
         case 'error':
           this.isResponseInProgress = false;
+          this.unmuteMic();
           this.notifyMessageHandlers({
             type: 'error',
             error: data.error?.message || 'An error occurred',
@@ -181,6 +196,26 @@ class WebRTCService {
       }
     } catch (error) {
       console.error('[WebRTC] Error parsing message:', error);
+    }
+  }
+
+  // Mute microphone to prevent echo during AI speech
+  private muteMic(): void {
+    if (this.localStream && !this.isMicMuted) {
+      this.localStream.getAudioTracks().forEach(track => {
+        track.enabled = false;
+      });
+      this.isMicMuted = true;
+    }
+  }
+
+  // Unmute microphone after AI finishes speaking
+  private unmuteMic(): void {
+    if (this.localStream && this.isMicMuted) {
+      this.localStream.getAudioTracks().forEach(track => {
+        track.enabled = true;
+      });
+      this.isMicMuted = false;
     }
   }
 
@@ -207,39 +242,50 @@ class WebRTCService {
 
   // Advance to a new PathRAG node - updates context AND triggers AI to speak
   advanceToNode(nodeContext: string, voiceInstruction: string): void {
-    if (this.dataChannel?.readyState === 'open') {
-      // 0. Cancel any in-progress response to prevent overlap
-      if (this.isResponseInProgress) {
-        this.dataChannel.send(JSON.stringify({ type: 'response.cancel' }));
-        this.isResponseInProgress = false;
-      }
-      
-      // 1. Update session instructions with new PathRAG context
-      const updateMessage = {
-        type: 'session.update',
-        session: {
-          instructions: nodeContext
-        }
-      };
-      this.dataChannel.send(JSON.stringify(updateMessage));
-      
-      // 2. Inject system message with exact instruction to speak
-      const systemMessage = {
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'system',
-          content: [{ 
-            type: 'input_text', 
-            text: `[NEXT STEP] Speak this instruction to the user: "${voiceInstruction}"`
-          }]
-        }
-      };
-      this.dataChannel.send(JSON.stringify(systemMessage));
-      
-      // 3. Trigger response
-      this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
+    if (this.dataChannel?.readyState !== 'open') {
+      console.log('[WebRTC] Data channel not open, skipping advance');
+      return;
     }
+
+    // Debounce protection - prevent rapid-fire triggers
+    const now = Date.now();
+    if (now - this.lastTriggerTime < this.TRIGGER_DEBOUNCE_MS) {
+      console.log('[WebRTC] Debounce: skipping trigger (too soon)');
+      return;
+    }
+    this.lastTriggerTime = now;
+
+    // 0. Cancel any in-progress response to prevent overlap
+    if (this.isResponseInProgress) {
+      this.dataChannel.send(JSON.stringify({ type: 'response.cancel' }));
+      this.isResponseInProgress = false;
+    }
+    
+    // 1. Update session instructions with new PathRAG context
+    const updateMessage = {
+      type: 'session.update',
+      session: {
+        instructions: nodeContext
+      }
+    };
+    this.dataChannel.send(JSON.stringify(updateMessage));
+    
+    // 2. Inject system message with exact instruction to speak
+    const systemMessage = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'system',
+        content: [{ 
+          type: 'input_text', 
+          text: `[NEXT STEP] Speak this instruction to the user: "${voiceInstruction}"`
+        }]
+      }
+    };
+    this.dataChannel.send(JSON.stringify(systemMessage));
+    
+    // 3. Trigger response
+    this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
   }
 
   // Trigger initial response (uses session instructions set during connect)
@@ -288,6 +334,8 @@ class WebRTCService {
     
     this.analyser = null;
     this.isResponseInProgress = false;
+    this.isMicMuted = false;
+    this.lastTriggerTime = 0;
   }
 
   // Event subscription methods

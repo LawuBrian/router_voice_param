@@ -72,7 +72,8 @@ export default function Home() {
   }, []);
 
   // Process user response through PathRAG
-  const processResponse = useCallback(async (response: string) => {
+  // skipVoiceTrigger = true when called from handleQuickResponse (to avoid duplicate triggers)
+  const processResponse = useCallback(async (response: string, skipVoiceTrigger = false) => {
     if (!sessionId) return;
     
     try {
@@ -96,8 +97,8 @@ export default function Home() {
       setStatus(data.status);
       
       // Advance AI to the new PathRAG node with updated context
-      // This updates instructions AND triggers AI to speak the next step
-      if (isConnected && data.voice_context && data.current_node?.voice_instruction) {
+      // Only trigger if not skipped (voice transcript triggers this, quick response handles separately)
+      if (!skipVoiceTrigger && isConnected && data.voice_context && data.current_node?.voice_instruction) {
         webrtcService.advanceToNode(data.voice_context, data.current_node.voice_instruction);
       }
       
@@ -205,10 +206,10 @@ export default function Home() {
       node_id: currentNode?.node_id,
     }]);
     
-    // Process through PathRAG to advance to next node
-    const result = await processResponse(response);
+    // Process through PathRAG (skip auto-trigger, we'll handle it)
+    const result = await processResponse(response, true);
     
-    // Advance AI to new node (context + voice instruction)
+    // Advance AI to new node (single trigger point)
     if (result?.current_node?.voice_instruction && result?.voice_context) {
       webrtcService.advanceToNode(result.voice_context, result.current_node.voice_instruction);
     }
