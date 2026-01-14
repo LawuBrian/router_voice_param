@@ -284,14 +284,7 @@ export default function Home() {
 
   // Handle quick response from diagnostic panel (button clicks)
   const handleQuickResponse = async (response: string) => {
-    // Prevent concurrent processing
-    if (isProcessingRef.current) {
-      console.log('[Page] Already processing, button click ignored');
-      return;
-    }
-    
-    isProcessingRef.current = true;
-    lastProcessedRef.current = response;
+    console.log('[Page] Quick response clicked:', response);
     
     // Add to transcript
     setTranscript(prev => [...prev, {
@@ -305,15 +298,13 @@ export default function Home() {
       // Process through PathRAG
       const nextInstruction = await processResponse(response);
       
-      // If node changed, update the AI's context
+      // If node changed, update the AI's context with interrupt
       if (nextInstruction && isConnected) {
-        webrtcService.updateContext(nextInstruction);
+        // Cancel any current speech first (interrupt)
+        webrtcService.cancelAndUpdate(nextInstruction);
       }
-    } finally {
-      // Reset processing flag after delay
-      setTimeout(() => {
-        isProcessingRef.current = false;
-      }, 1000);
+    } catch (error) {
+      console.error('[Page] Error processing quick response:', error);
     }
   };
 

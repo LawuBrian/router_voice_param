@@ -263,35 +263,51 @@ class WebRTCService {
     this.sendInstruction(nodeInstruction);
   }
 
+  // Cancel current response and send new instruction (for button clicks/interrupts)
+  cancelAndUpdate(nodeInstruction: string): void {
+    if (this.dataChannel?.readyState !== 'open') {
+      console.log('[WebRTC] Data channel not ready');
+      return;
+    }
+    
+    console.log('[WebRTC] Cancel and update:', nodeInstruction.substring(0, 50));
+    
+    // Always cancel first
+    try {
+      this.dataChannel.send(JSON.stringify({ type: 'response.cancel' }));
+      this.isProcessing = false;
+    } catch (e) {
+      // Ignore cancel errors
+    }
+    
+    // Wait for cancel to process, then send new instruction
+    setTimeout(() => {
+      this.sendInstruction(nodeInstruction);
+    }, 300);
+  }
+
   private sendInstruction(nodeInstruction: string): void {
     if (!this.dataChannel || this.dataChannel.readyState !== 'open') return;
     
     this.isProcessing = true;
     
-    // Update session with STRICT script-reading instructions
+    // Direct instruction - tell AI exactly what to say
     const updateMessage = {
       type: 'session.update',
       session: {
-        instructions: `You are Akili. Read this script aloud, then STOP and WAIT.
+        instructions: `Say exactly this: "${nodeInstruction}"
 
-=== SCRIPT TO READ ===
-"${nodeInstruction}"
-
-=== RULES ===
-- Say ONLY the script above (you can rephrase slightly)
-- Do NOT add your own advice or diagnosis
-- Do NOT suggest solutions
-- Do NOT ask extra questions
-- ENGLISH ONLY
-- After speaking, call step_complete() and WAIT silently`,
-        temperature: 0.6,  // Azure minimum
-        max_response_output_tokens: 300
+Rules:
+- Say ONLY the text above
+- Do NOT add "Great!", "Sure!", or any filler
+- Do NOT ask additional questions
+- After speaking, stop and wait`
       }
     };
     this.dataChannel.send(JSON.stringify(updateMessage));
-    console.log('[WebRTC] Updated instruction:', nodeInstruction.substring(0, 50));
+    console.log('[WebRTC] Sending instruction:', nodeInstruction.substring(0, 50));
     
-    // Trigger response after update processes
+    // Trigger response
     setTimeout(() => {
       if (this.dataChannel?.readyState === 'open') {
         this.dataChannel.send(JSON.stringify({ type: 'response.create' }));
